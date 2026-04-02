@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNSS分析报告</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏切换按钮 -->
+        <button id="sidebar-toggle" title="切换导航栏">☰</button>
+        
+        <!-- 左侧导航 -->
+        <nav id="sidebar">
+            <div class="sidebar-header">
+                <h2>GNSS 分析报告</h2>
+            </div>
+            <ul id="nav-list">
+                <li><a href="#page-summary" data-page="summary" class="active">精度报告</a></li>
+                <li><a href="#page-satellites" data-page="satellites">卫星数</a></li>
+                <li class="nav-group">
+                    <a href="javascript:void(0)" class="nav-group-toggle">CN0 <span class="arrow">▶</span></a>
+                    <ul class="nav-group-items">
+                        <li><a href="#page-gps" data-page="gps-cn0">GPS CN0</a></li>
+                        <li><a href="#page-bds-1" data-page="bds-1-cn0">BDS CN0</a></li>
+                        <li><a href="#page-bds-2" data-page="bds-2-cn0">BDS CN0</a></li>
+                        <li><a href="#page-gal-cn0" data-page="gal-cn0">GAL CN0</a></li>
+                        <li><a href="#page-glo-cn0" data-page="glo-cn0">GLO CN0</a></li>
+                    </ul>
+                </li>
+                <li><a href="#page-speed" data-page="speed">速度误差</a></li>
+                <li><a href="#page-dop" data-page="dop">DOP值</a></li>
+                <li><a href="#page-distance" data-page="distance">水平误差</a></li>
+                <li><a href="#page-distance4" data-page="distance4">固定解误差</a></li>
+                <li><a href="#page-rtk-delay" data-page="rtk-delay">RTK时延</a></li>
+                <li><a href="#page-fix-label" data-page="fix-label">定位标识</a></li>
+                <li><a href="#page-time" data-page="time">时间连续性</a></li>
+            </ul>
+        </nav>
+
+        <!-- 右侧主要内容 -->
+        <div id="content">
+            <iframe id="page-frame" class="page-frame" data-src="data/summary_report.html"></iframe>
+        </div>
+    </div>
+
+    <div id="image-modal" class="modal">
+        <span class="modal-close">&times;</span>
+        <div class="modal-content-wrapper">
+            <img class="modal-content" id="modal-img">
+            <div id="modal-caption" class="modal-caption"></div>
+        </div>
+        <div class="modal-controls">
+            <button class="modal-btn" id="zoom-out" title="缩小">-</button>
+            <button class="modal-btn" id="zoom-reset" title="复位">1:1</button>
+            <button class="modal-btn" id="zoom-in" title="放大">+</button>
+        </div>
+    </div>
+
+    <script>
+        const pageMap = {
+            'summary': 'data/report.html',
+            'time': 'data/时间连续性.html',
+            'dop': 'data/DOP值.html',
+            'satellites': 'data/卫星数.html',
+            'gps-cn0': 'data/GPS_CN0.html',
+            'bds-1-cn0': 'data/BDS_1_CN0.html',
+            'bds-2-cn0': 'data/BDS_2_CN0.html',
+            'gal-cn0': 'data/GAL_CN0.html',
+            'glo-cn0': 'data/GLO_CN0.html',
+            'speed': 'data/速度误差.html',
+            'distance': 'data/水平误差2D.html',
+            'distance4': 'data/固定解误差.html',
+            'rtk-delay': 'data/RTK时延.html',
+            'fix-label': 'data/定位标识符.html'
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const navLinks = document.querySelectorAll('#nav-list > li > a, #nav-list .nav-group-items li a');
+            const navGroupToggles = document.querySelectorAll('.nav-group-toggle');
+            const pageFrame = document.getElementById('page-frame');
+
+            function loadPage(pageKey) {
+                const src = pageMap[pageKey];
+                if (src && pageFrame) {
+                    pageFrame.src = src;
+                }
+            }
+
+            navGroupToggles.forEach(toggle => {
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const group = this.closest('.nav-group');
+                    group.classList.toggle('expanded');
+                });
+            });
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.querySelectorAll('#nav-list a').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                    const pageKey = this.getAttribute('data-page');
+                    loadPage(pageKey);
+                });
+            });
+
+            loadPage('summary');
+        });
+    </script>
+</body>
+</html>

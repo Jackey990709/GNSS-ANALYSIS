@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block script %}<script src="../assets/js/echarts.min.js"></script>{% endblock %}
+
+{% block style %}
+.chart-container {
+	text-align: center;
+	width: 49%;
+	height: 300px;
+	margin: 1px;
+	float: left;
+	padding-top: 20px;
+}
+{% endblock %}
+
+{% block body %}
+{% if description is defined %}
+	<div style='font-weight:bold'>
+		{{ description }}
+	</div>
+{% endif %}
+
+<div id="chart-container" style="width: 100%;"></div>
+
+<script type="text/javascript">
+    // 存储所有chart实例，用于窗口大小调整
+    var myArray = [];
+	var reportData = {{ test_datas }};
+    
+    // 遍历window.reportData，动态生成图表
+    for (var chartName in reportData) {
+        if (!reportData.hasOwnProperty(chartName)) continue;
+        
+        var chartData = reportData[chartName];
+        var axisData = chartData[0];  // x轴数据
+        var seriesData = chartData[1];  // 系列数据对象
+        
+        // 创建图表容器div
+        var div = document.createElement('div');
+        div.id = 'chart_' + chartName.replace(/\./g, '_');
+        div.className = 'chart-container';
+        document.getElementById('chart-container').appendChild(div);
+        
+        // 初始化echarts实例
+        var myChart = echarts.init(div, {renderer: 'canvas'});
+        
+        // 动态构建series数组 - 只包含存在的系列
+        var seriesList = [];
+        for (var seriesName in seriesData) {
+            if (seriesData.hasOwnProperty(seriesName)) {
+                seriesList.push({
+                    name: seriesName,
+                    type: 'line',
+                    data: seriesData[seriesName]
+                });
+            }
+        }
+        
+        // 构建图表配置
+        var option = {
+            animation: false,
+            title: {
+                text: chartName,
+                left: "center",
+            },
+            tooltip: {
+                trigger: 'axis'
+            },
+            legend: {
+                bottom: 'bottom',
+            },
+            toolbox: {
+                feature: {
+                    saveAsImage: {},
+                    restore: {},
+                }
+            },
+            dataZoom: [
+                {
+                    type: 'inside',
+                    show: true,
+                    start: 0,
+                    end: 100
+                }
+            ],
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: axisData
+            },
+            yAxis: {
+                type: 'value',
+                scale: true
+            },
+            series: seriesList
+        };
+        
+        // 设置图表配置
+        myChart.setOption(option);
+        myArray.push(myChart);
+    }
+    
+    // 窗口大小调整时自适应
+    myArray.forEach(function(e) {
+        window.addEventListener("resize", function() {
+            e.resize();
+        });
+    });
+</script>
+{% endblock %}

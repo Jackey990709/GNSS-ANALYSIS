@@ -1,0 +1,47 @@
+{
+  "Mode": "Time",
+  "Date": "20260203",
+  "Time": [
+    {
+      "Scene": "白石岭隧道",
+      "BeginTime": "034157",
+      "EndTime": "034233"
+    },
+    {
+      "Scene": "塘朗山隧道",
+      "BeginTime": "034809",
+      "EndTime": "034956"
+    },
+    {
+      "Scene": "欢乐谷林荫",
+      "BeginTime": "035515",
+      "EndTime": "040335"
+    },
+    {
+      "Scene": "海岸城多路径",
+      "BeginTime": "042056",
+      "EndTime": "043024"
+    },
+    {
+      "Scene": "科技城多路径",
+      "BeginTime": "044055",
+      "EndTime": "045055"
+    },
+    {
+      "Scene": "盐田隧道",
+      "BeginTime": "052411",
+      "EndTime": "052557"
+    },
+    {
+      "Scene": "深盐高架下",
+      "BeginTime": "053121",
+      "EndTime": "054255"
+    },
+    {
+      "Scene": "马峦山隧道",
+      "BeginTime": "054526",
+      "EndTime": "055104"
+    }
+  ],
+  "Description": ""
+}

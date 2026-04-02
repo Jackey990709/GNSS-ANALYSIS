@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GNSS 定位误差分析报告</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏切换按钮 -->
+        <button id="sidebar-toggle" title="切换导航栏">☰</button>
+        
+        <!-- 左侧导航 -->
+        <nav id="sidebar">
+            <div class="sidebar-header">
+                <h2>GNSS 分析报告</h2>
+            </div>
+            <ul id="nav-list">
+                <li><a href="#section-overview" class="active">测试概要</a></li>
+                <li><a href="#section-summary">CEP误差总览</a></li>
+                <!-- 场景导航将动态插入这里 -->
+            </ul>
+        </nav>
+
+        <!-- 右侧主要内容 -->
+        <main id="content">
+            <!-- 封面与概要 -->
+            <section id="section-overview">
+                <h1>GNSS 定位误差分析报告</h1>
+                
+                <div class="card">
+                    <h2>测试概要</h2>
+                    <p><strong>测试目的：</strong> 评估多款 GNSS 模组在城市峡谷、高速路、树荫等典型场景下的定位精度与可用性，识别不同环境下的优势设备与潜在问题。</p>
+                    <div id="test-meta">
+                        <!-- 动态填充测试对象和场景列表 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 总览 -->
+            <section id="section-summary">
+                <h2>CEP误差总览</h2>
+                <div id="summary-container">
+                    <!-- 动态插入总览表格和图表 -->
+                </div>
+            </section>
+
+            <!-- 场景详细分析容器 -->
+            <div id="scenes-container">
+                <!-- 动态插入各场景的详细分析 -->
+            </div>
+        </main>
+    </div>
+
+    <div id="image-modal" class="modal">
+        <span class="modal-close">&times;</span>
+        <div class="modal-content-wrapper">
+            <img class="modal-content" id="modal-img">
+            <div id="modal-caption" class="modal-caption"></div>
+        </div>
+        <div class="modal-controls">
+            <button class="modal-btn" id="zoom-out" title="缩小">-</button>
+            <button class="modal-btn" id="zoom-reset" title="复位">1:1</button>
+            <button class="modal-btn" id="zoom-in" title="放大">+</button>
+        </div>
+    </div>
+
+    <script src="data/report_data.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>
