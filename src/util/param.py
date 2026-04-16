@@ -159,4 +159,13 @@ position_index_list = time_list + [
 ]
 
 
+pps_index_list = [
+    "MEAN:",
+    "RMS:",
+    "CEP50:",
+    "CEP68:",
+    "CEP95:",
+    "CEP99:",
+]
+
 parameters = {"coordinates": {}, "error_list": [], "header_list": []}

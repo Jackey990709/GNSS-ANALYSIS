@@ -6,6 +6,7 @@ from PySide6.QtGui import QDesktopServices
 
 from src import HANDLE_ITEM, HandleItem, Point
 from src.handler.position import PositionUIProcessor
+from src.handler.pps import PPSUIProcessor
 from src.ui.antenna import AntennaUI
 from src.util.const import LocalPath
 from src.util.msg import Message
@@ -18,6 +19,7 @@ class MainController(QObject):
 
         self.view: MainView = MainView()
         self.position: PositionUIProcessor = PositionUIProcessor()
+        self.pps: PPSUIProcessor = PPSUIProcessor()
 
         self.antenna_ui = AntennaUI(self.view.box_antenna)
         self.antenna_ui.setWindowFlags(Qt.WindowType.FramelessWindowHint)
@@ -46,13 +48,25 @@ class MainController(QObject):
 
         self.antenna_ui.btn_ok.clicked.connect(self.antenna_ui.add_antenna)
 
+        self.pps.log_signal.connect(self.view.log_signal_call)
+        self.pps.end_signal.connect(self.view.end_signal_call)
         self.position.log_signal.connect(self.view.log_signal_call)
         self.position.end_signal.connect(self.view.end_signal_call)
 
-    def start_program(self):
+    def start_pps_program(self, check_list):
+        self.pps.processor.filepath = self.view.filepath
+        self.pps.processor.check_list = check_list
+        self.pps.processor.edge_type = 1 if self.view.radio_raise.isChecked() else 0
+        self.pps.start()
 
+    def start_program(self):
         check_list = self.view.get_file_list()
         if not check_list:
+            return
+
+        if self.view.combo_type.currentIndex() == 1:
+            self.view.set_element_enable(False)
+            self.start_pps_program(check_list)
             return
 
         try:

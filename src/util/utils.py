@@ -16,12 +16,12 @@ def check_folder(fpath):
     return (e for e in os.listdir(fpath) if os.path.isdir(os.path.join(fpath, e)))
 
 
-def check_log_file(fpath, endswith=".log"):
+def check_log_file(fpath, endswith=[".log"]):
     try:
         return [
             e
             for e in os.listdir(fpath)
-            if e.lower().endswith(endswith.lower())
+            if any(e.lower().endswith(ext) for ext in endswith)
             and os.path.isfile(os.path.join(fpath, e))
         ]
     except FileNotFoundError:

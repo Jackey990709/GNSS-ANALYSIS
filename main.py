@@ -16,6 +16,9 @@ def main():
 
         return app.exec()
     except Exception:
+        import traceback
+
+        traceback.print_exc()
         return 1
 
 

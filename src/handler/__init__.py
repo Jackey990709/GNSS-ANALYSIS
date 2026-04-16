@@ -1,12 +1,9 @@
 import os
 import traceback
 
-import numpy as np
 import pandas as pd
 
-from src.libs.nmea import Default
 from src.util import utils
-from src.util.utils import calc_rms
 
 
 def nav_log_info(nav_log, log_info, temp_log_info, file, callback):
@@ -79,20 +76,6 @@ def format_pd(
     return df, freq, log_info, first_valid_index, last_valid_index
 
 
-# def _handle_time_continuity(df: pd.Series, freq=1, log_info=''):
-#     delta = 1 / freq * 1000
-#     df['diff_'] = df.utc_date_time.diff().astype('timedelta64[ms]').astype(float)
-#     df.dropna(subset=['diff_'], inplace=True)
-#     log_info = _handle_log_info(log_info, f'时间不连续:', df[df.diff_ != delta].utc_date_time)
-#
-#     return log_info
-
-
-def format_value(value) -> str:
-    value = str(value)
-    return value if "." not in value else value[:-7]
-
-
 def get_expect_valid_value(
     df: pd.DataFrame,
     freq,
@@ -115,17 +98,6 @@ def get_expect_valid_value(
         ...
 
     return df_expect, df[label].dropna().size
-
-
-def get_calc_data(df):
-    if df is None or df.empty:
-        return [np.nan] * 5
-    df_rms = calc_rms(df)
-    df_std = round(df.std(), Default.KEEP_DECIMAL_DIGIT)
-    df_max = round(df.swifter.apply(abs).max(), Default.KEEP_DECIMAL_DIGIT)
-    df_min = round(df.swifter.apply(abs).min(), Default.KEEP_DECIMAL_DIGIT)
-
-    return df.shape[0], df_rms, df_std, df_max, df_min
 
 
 def calc_heading(h1, h2, benchmark=300):

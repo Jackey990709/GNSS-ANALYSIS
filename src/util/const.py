@@ -80,3 +80,4 @@ class TTFFSignal(enum.Enum):
 class File:
     ORIGINAL_FILE_EXT = ".ori.csv"
     CALC_FILE_EXT = ".cal.csv"
+    EXT_FILE = ".csv"

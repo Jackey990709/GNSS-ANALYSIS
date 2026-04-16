@@ -34,8 +34,10 @@ class MainView(Ui_MainView, QMainWindow):
         self.filepath: str = ""
         self.temp_filepath: str = ""
         self.check_list: list[QCheckBox] = []
+        self.endswith = [".log"]
 
         self.on_box_mode_currentIndexChanged(0)
+        self.on_combo_type_currentIndexChanged(0)
 
     @Slot(int)
     def on_box_mode_currentIndexChanged(self, index: int):
@@ -79,6 +81,13 @@ class MainView(Ui_MainView, QMainWindow):
         if filepath:
             self.edit_ref.setText(filepath)
 
+    @Slot(int)
+    def on_combo_type_currentIndexChanged(self, index: int):
+        self.frame_position.setEnabled(index == 0)
+        self.frame_pps.setEnabled(index == 1)
+        self.endswith = [".log"] if index == 0 else [".log", ".txt", ".ubx"]
+        self.refresh_ui()
+
     def init_coordinates(self):
         self.box_antenna.clear()
         self.box_antenna.addItems(list(parameters["coordinates"].keys()))
@@ -92,12 +101,14 @@ class MainView(Ui_MainView, QMainWindow):
             return
 
         self.filepath = self.temp_filepath
+        self.refresh_ui()
 
+    def refresh_ui(self):
         self.check_list.clear()
         self.widget_log_file.clear()
 
         try:
-            for file in check_log_file(self.filepath, endswith=".log"):
+            for file in check_log_file(self.filepath, endswith=self.endswith):
                 filename = file.split("/")[-1]
                 checkbox = QCheckBox(filename)
                 font = QFont()
@@ -134,6 +145,7 @@ class MainView(Ui_MainView, QMainWindow):
     def set_element_enable(self, enabled):
         self.frame.setEnabled(enabled)
         self.frame_2.setEnabled(enabled)
+        self.frame_3.setEnabled(enabled)
 
     def show_warning(self, message: str) -> QMessageBox.StandardButton:
         return QMessageBox.warning(

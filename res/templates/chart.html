@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
-{% block script %}<script src="../assets/js/echarts.min.js"></script>{% endblock %}
+{% block script %}
+{% if chart_js is defined %}
+<script src="{{ chart_js }}"></script>
+{% else %}
+<script src="../assets/js/echarts.min.js"></script>
+{% endif %}
+{% endblock %}
 
 {% block style %}
 .chart-container {

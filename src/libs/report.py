@@ -80,11 +80,11 @@ class Report:
         self,
         df_result: pd.DataFrame,
         folder_path: str,
-        data_path: str,
-        point: Point,
-        nav_log: str,
-        log_info: str,
-        check_list: list[str],
+        data_path: str = "",
+        point: Point = Point(0, 0, 0),
+        nav_log: str = "",
+        log_info: str = "",
+        check_list: list[str] = [],
         is_moving: bool = False,
         is_ttff: bool = False,
         begin_time: Optional[pd.Timestamp] = None,
@@ -221,7 +221,7 @@ class Report:
 
         loop.run_until_complete(wait_write_file_task_done_async())
 
-    def copy_assets_to_folder(self, assets_path: Path):
+    def copy_assets_to_folder(self, assets_path: Path, copy_index: bool = True):
         target_path = Path(self.folder_path)
 
         # 如果目标目录不存在，创建它
@@ -229,7 +229,8 @@ class Report:
 
         # 复制整个目录树
         shutil.copytree(assets_path, target_path / "assets", dirs_exist_ok=True)
-        shutil.copy(LocalPath.TEMPLATE_PATH / "index.html", target_path)
+        if copy_index:
+            shutil.copy(LocalPath.TEMPLATE_PATH / "index.html", target_path)
 
     def _get_precision_data(self):
         gps_dict: dict[str, Any] = {}
@@ -671,3 +672,53 @@ class Report:
                         pass
                 adjusted_width = (max_length + 2) * 1.2
                 worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    def gen_pps_report(self):
+        self.copy_assets_to_folder(LocalPath.ASSETS_PATH, copy_index=False)
+        pps_datas, time_datas = self.gen_pps_data()
+
+        env = _load_package()
+        chart_template = env.get_template("chart.html")
+
+        self._gen_excel_task()
+
+        self._gen_task(
+            chart_template,
+            "pps_chart.html",
+            title="授时精度",
+            chart_js="./assets/js/echarts.min.js",
+            test_datas=pps_datas,
+        )
+        self._gen_task(
+            chart_template,
+            "time_chart.html",
+            title="时间连续性",
+            chart_js="./assets/js/echarts.min.js",
+            test_datas=time_datas,
+        )
+
+        loop.run_until_complete(wait_write_file_task_done_async())
+
+    def gen_pps_data(self):
+        pps_datas, time_datas = {}, {}
+        for file in self.check_list:
+            try:
+                df = pd.read_csv(
+                    os.path.join(self.folder_path, file[:-4] + f"_pps{File.EXT_FILE}"),
+                    low_memory=False,
+                )
+
+                df_utc_time = self._format_utc_time(df)
+
+                df_pps = df["pps_delta"].fillna(DEFAULT_NULL_VALUE)
+
+                time_datas[file] = [
+                    _format_index(df_pps),
+                    {"time": df_utc_time["delta"].fillna(DEFAULT_NULL_VALUE).to_list()},
+                ]
+                pps_datas[file] = [_format_index(df_pps), {"pps": df_pps.to_list()}]
+            except FileNotFoundError:
+                time_datas[file] = [[], []]
+                pps_datas[file] = [[], []]
+
+        return pps_datas, time_datas

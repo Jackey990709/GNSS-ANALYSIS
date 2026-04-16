@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-VERSION: str = "v1.0.1"
+VERSION: str = "v1.1"
 
 
 class HandleItem(IntEnum):
