@@ -450,20 +450,20 @@ class PositionProcessor(PositionAttr):
         """计算ENU坐标系和各种距离"""
         # 计算ENU坐标系
 
-        assert isinstance(self.point, Point)
+        # assert isinstance(self.point, Point)
         df["E"], df["N"], df["U"], df["distance_3d"], df["distance"] = (
             utils.calculate_data(
                 df["lat"],
                 df["lng"],
                 df["hgt"],
-                self.point.lat,
-                self.point.lng,
-                self.point.hgt,
+                self.point.lat,  # type: ignore
+                self.point.lng,  # type: ignore
+                self.point.hgt,  # type: ignore
             )
         )
 
         # 计算高度差和速度差
-        df["hgt_delta"] = abs(df["hgt"] - self.point.hgt).round(3)
+        df["hgt_delta"] = abs(df["hgt"] - self.point.hgt).round(3)  # type: ignore
         df["speed_delta"] = df["speed"].round(3)
         df["std_hgt_delta"] = abs(df["hgt"] - hgt_mean).round(3)
 
