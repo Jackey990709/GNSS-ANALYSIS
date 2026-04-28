@@ -1183,7 +1183,30 @@ class PositionUIProcessor(QThread):
         QThread.__init__(self)
         self.processor = PositionProcessor()
 
+    def check_file(self):
+        if isinstance(self.processor.point, str) and not os.path.exists(
+            self.processor.point
+        ):
+            self.log_signal.emit(f"<font color='red'>参考文件不存在</font>")
+            return False
+
+        check_list = [
+            check_file.text() if isinstance(check_file, QCheckBox) else check_file
+            for check_file in self.processor.check_list
+        ]
+
+        for file in check_list:
+            if not os.path.exists(os.path.join(self.processor.filepath, file)):
+                self.log_signal.emit(f"<font color='red'>{file}文件不存在</font>")
+                return False
+
+        return True
+
     def run(self):
+        if not self.check_file():
+            self.end_signal.emit()
+            return
+
         self.processor.create()
         self.processor.callback = self.log_signal.emit
 
