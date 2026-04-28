@@ -2,6 +2,7 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
+from threading import Event
 from typing import Any, Optional, Union
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QCheckBox
@@ -118,6 +119,8 @@ class PositionAttr:
         self.js_report: Optional[JsReport] = None
         self.action: int = HandleItem.INTERNAL
 
+        self.stop_event: Optional[Event] = None
+
     def create(self):
         if not self.filepath:
             return
@@ -189,6 +192,9 @@ class PositionProcessor(PositionAttr):
         self.check_list: list[str] = self._normalize_check_list()
 
         for file in self.check_list:
+            if self.stop_event and self.stop_event.is_set():
+                return
+
             self.print_msg(f"开始处理文件: {file}")
 
             df, _, df_valid, df_expect, freq, temp_log = self._generate_dateframe(
@@ -308,6 +314,9 @@ class PositionProcessor(PositionAttr):
         self.print_msg("参考处理完成")
 
         for file in self.check_list:
+            if self.stop_event and self.stop_event.is_set():
+                return
+
             self.print_msg(f"开始处理文件: {file}")
 
             df, *_, freq, temp_log_info = self._generate_dateframe(
@@ -523,6 +532,9 @@ class PositionProcessor(PositionAttr):
 
         with open(file_path, "rb") as f:
             for line in f:
+                if self.stop_event and self.stop_event.is_set():
+                    break
+
                 line_upper = line.upper()
                 update_error_dict(line_upper, error_dict, self.error_list)
 
