@@ -29,7 +29,7 @@ class MainView(Ui_MainView, QMainWindow):
 
         QApplication.setStyle("Fusion")
 
-        self.setWindowTitle(f"NMEAAnalyse{title}-{VERSION}")
+        self.setWindowTitle(f"GNSSAnalysis{title}-{VERSION}")
 
         self.filepath: str = ""
         self.temp_filepath: str = ""

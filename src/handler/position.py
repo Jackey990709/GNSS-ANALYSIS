@@ -1225,10 +1225,10 @@ class PositionUIProcessor(QThread):
 class PositionWebProcessor:
     def __init__(self):
         self.processor = PositionProcessor()
+        self.processor.callback = print
 
     def run(self):
         self.processor.create()
-        self.processor.callback = print
 
         if self.processor.is_moving:
             self.processor.process_moving_data(

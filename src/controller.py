@@ -35,10 +35,13 @@ class MainController(QObject):
         self.init_ui()
 
     def init_ui(self):
+        self.view.box_fix.setEnabled(False)
         if self.action == HandleItem.EXTERNAL:
             self.view.box_mode.setCurrentIndex(1)
             self.view.box_mode.setEnabled(False)
             self.view.frame_static.setHidden(True)
+            self.view.frame_pps.setHidden(True)
+            self.view.combo_type.setEnabled(False)
 
     def setup_connections(self):
         self.view.btn_open.clicked.connect(self.view.open_folder)
@@ -64,21 +67,27 @@ class MainController(QObject):
         if not check_list:
             return
 
+        is_moving = self.view.box_mode.currentIndex() == 1
+
         if self.view.combo_type.currentIndex() == 1:
             self.view.set_element_enable(False)
             self.start_pps_program(check_list)
             return
 
-        try:
-            lat = float(self.view.edit_lat.text().strip())
-            lng = float(self.view.edit_lng.text().strip())
-            hgt = float(self.view.edit_hgt.text().strip())
-        except ValueError:
-            self.view.show_warning(Message.MSG_COORDINATE_TYPE_ERROR)
-            return
+        if is_moving:
+            if not self.view.edit_ref.text().strip():
+                self.view.show_warning(Message.MSG_POINT_INVALID)
+                return
+        else:
+            try:
+                lat = float(self.view.edit_lat.text().strip())
+                lng = float(self.view.edit_lng.text().strip())
+                hgt = float(self.view.edit_hgt.text().strip())
+            except ValueError:
+                self.view.show_warning(Message.MSG_COORDINATE_TYPE_ERROR)
+                return
 
-        point = Point(lat, lng, hgt)
-
+        point = self.view.edit_ref.text() if is_moving else Point(lat, lng, hgt)
         self.view.set_element_enable(False)
 
         self.position.processor.filepath = self.view.filepath
@@ -89,22 +98,15 @@ class MainController(QObject):
             # e.upper().encode() for e in Variable.json_settings.get("prefix_list")
         ]
         self.position.processor.is_ttff = False
-        self.position.processor.is_moving = self.view.box_mode.currentIndex() == 1
-        self.position.processor.point = (
-            self.view.edit_ref.text() if self.position.processor.is_moving else point
-        )
+        self.position.processor.is_moving = is_moving
+        self.position.processor.point = point
         self.position.processor.error_list = [
             # e.upper().encode() for e in Variable.json_settings.get("error_list")
         ]
         self.position.processor.utc_date = None
         self.position.processor.action = self.action
 
-        if not self.position.processor.point:
-            self.view.show_warning(Message.MSG_POINT_INVALID)
-            self.view.end_signal_call()
-            return
-
-        # if (self.action >> 1) & 1 and self.view.check_split.isChecked():
+        # 是否分割统计场景，分割信息从REPORT-UTC.json获取
         if self.view.check_split.isChecked():
             scenes = self.gen_scenes()
             if not scenes:

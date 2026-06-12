@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-VERSION: str = "v1.1"
+VERSION: str = "v1.2"
 
 
 class HandleItem(IntEnum):
@@ -11,7 +11,7 @@ class HandleItem(IntEnum):
 
 title_map = {
     HandleItem.INTERNAL: "-Internal",
-    HandleItem.EXTERNAL: "",
+    HandleItem.EXTERNAL: "-External",
     HandleItem.INTERNAL | HandleItem.EXTERNAL: "-I+External",
 }
 
