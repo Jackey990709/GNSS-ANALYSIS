@@ -1,126 +1,137 @@
-import os
-import traceback
+from .func import *
 
-import pandas as pd
+EXPORT_COLUMNS = [
+    "label",
+    "lat",
+    "lng",
+    "hgt",
+    # "speed",
+    # "E",
+    # "N",
+    # "U",
+    "yaw",
+    "gps_l1",
+    "distance_3d",
+    "distance",
+    "hgt_delta",
+    "speed_delta",
+    "yaw_delta",
+]
 
-from src.util import utils
+REF_COLUMNS = [
+    "ref_label",
+    "ref_lat",
+    "ref_lng",
+    "ref_hgt",
+    "ref_speed",
+    "ref_yaw",
+]
 
+RENAME_COLUMNS = {
+    "label": "ref_label",
+    "lat": "ref_lat",
+    "lng": "ref_lng",
+    "hgt": "ref_hgt",
+    "speed": "ref_speed",
+    "yaw": "ref_yaw",
+    "pitch": "ref_pitch",
+    "roll": "ref_roll",
+    "heading": "ref_heading",
+    "status": "ref_status",
+}
 
-def nav_log_info(nav_log, log_info, temp_log_info, file, callback):
-    if temp_log_info:
-        log_info += (
-            f'<p style="color:blue"><b><a name="{file}">{file}异常信息：</a></b></p>'
-            + temp_log_info
-        )
-        nav_log += f'<p><a href="#{file}">{file}异常信息</a></p>'
+DROP_COLUMNS = [
+    "gga_time",
+    "vdop",
+    "hdop",
+    "pdop",
+    "delay",
+    "satellites",
+    "total_svs",
+    "total_cn0",
+    "avg_cn0",
+    "top_cn0",
+    "status",
+    "week",
+    "gpstime",
+    # "header",
+    # "yaw",
+    # "l1_count",
+    # "l2_count",
+    # "l5_count",
+    "p_veln",
+    "p_vele",
+    "p_veld",
+    "p_grdspd",
+    "p_spd",
+    "p_heading",
+    "p_grdspdacc",
+    "p_spdacc",
+    "p_headingacc",
+    "NorthUnc",
+    "EastUnc",
+    "UpUnc",
+    "EastVelUnc",
+    "NorthVelUnc",
+    "UpVelUnc",
+    "PitchUnc",
+    "RollUnc",
+    "AzimuthUnc",
+    "Quality",
+]
 
-    return nav_log, log_info
+POS320_COLUMNS = [
+    "week",
+    "gpstime",
+    "lat",
+    "lng",
+    "hgt",
+    "ref_veln",
+    "ref_vele",
+    "ref_veld",
+    "roll",
+    "pitch",
+    "heading",
+]
 
+HP100_COLUMNS = [
+    "week",
+    "gpstime",
+    "lat",
+    "lng",
+    "hgt",
+    "NorthUnc",
+    "EastUnc",
+    "UpUnc",
+    "ref_vele",
+    "ref_veln",
+    "ref_veld",
+    "EastVelUnc",
+    "NorthVelUnc",
+    "UpVelUnc",
+    "pitch",
+    "roll",
+    "heading",
+    "PitchUnc",
+    "RollUnc",
+    "AzimuthUnc",
+    "Quality",
+]
 
-def update_error_dict(line: bytes, error_dict: dict, error_list: list[bytes]):
-    for err in error_list:
-        if err in line:
-            err_str = line.strip().decode(errors="ignore").strip()
-            error_dict[err_str] = error_dict.get(err_str, 0) + 1
-            break
-
-
-def print_error_info(error_dict: dict, callback):
-    for err in error_dict.keys():
-        callback(f'<font color="red">检测到{err}异常</font>')
-
-
-def handle_log_info(log_info: str, temp_log_info: str, df: pd.DataFrame) -> str:
-    if df is None:
-        log_info += f"{temp_log_info}<br>"
-    else:
-        if not df.empty:
-            log_info += f"{temp_log_info}<br>"
-            if isinstance(df, pd.Series):
-                for e in df:
-                    log_info += f"{e}<br>"
-
-            if isinstance(df, pd.DataFrame):
-                for e in df.iterrows():
-                    log_info += f"{e}<br>"
-            log_info += f"<br>"
-    return log_info
-
-
-def get_duplicate_e_info(df, e="utc_date_time"):
-    if not df[e].is_unique:
-        data1 = df[e].drop_duplicates(keep=False)
-        data2 = df[e].drop_duplicates(keep="first")
-        return pd.concat([data1, data2]).drop_duplicates(keep=False)
-    return pd.Series([], dtype="object")
-
-
-def format_pd(
-    df: pd.DataFrame, log_info: str = "", label: str = "ksxt", handle_log=True
-):
-    df.dropna(subset=["utc_date_time"], inplace=True)
-    # df_log = get_duplicate_e_info(df)
-    # if handle_log:
-    #     log_info = handle_log_info(log_info, f"{label}语句重复输出:", df_log)
-
-    df = df.drop_duplicates(subset=["utc_date_time"], keep="first")
-    df.reset_index(inplace=True)  # 重置索引，解决丢数/重复数据导致的索引不连续
-    # df = df.copy()
-    first_valid_index = df["utc_date_time"].first_valid_index()
-    last_valid_index = df["utc_date_time"].last_valid_index()
-    df["utc_date_time"] = pd.to_datetime(df["utc_date_time"])
-    freq = utils.get_freq(df["utc_date_time"].to_numpy())
-    # log_info = _handle_time_continuity(df, freq, log_info)
-    df.set_index("utc_date_time", inplace=True)
-
-    return df, freq, log_info, first_valid_index, last_valid_index
-
-
-def get_expect_valid_value(
-    df: pd.DataFrame,
-    freq,
-    df_total,
-    first_valid_index,
-    last_valid_index,
-    label="heading",
-) -> tuple[int, int]:
-    df_expect = 0
-    try:
-        df_expect = (
-            ((df.index[-1] - df.index[0]).total_seconds()) * freq
-            + 1
-            + first_valid_index
-            + df_total
-            - last_valid_index
-            - 1
-        )
-    except IndexError:
-        ...
-
-    return df_expect, df[label].dropna().size
-
-
-def calc_heading(h1, h2, benchmark=300):
-    if abs(h1 - h2) >= benchmark:
-        return round(abs(min(h1, h2) + 360 - max(h1, h2)), 3)
-
-    return round(abs(h1 - h2), 3)
-
-
-def write_to_file(df: pd.DataFrame, result_path: str, filename, index=True):
-    try:
-        if not index:
-            df.to_csv(os.path.join(result_path, filename), index=index)
-        else:
-            if "index" in df.columns:
-                df.drop(columns=["index"]).to_csv(
-                    os.path.join(result_path, filename), index=index
-                )
-            else:
-                df.to_csv(os.path.join(result_path, filename))
-    except PermissionError:
-        with open(
-            os.path.join("\\".join(result_path.split("\\")[:-1]), "debug.txt"), "a"
-        ) as f:
-            f.write(traceback.format_exc())
-        raise Exception
+__all__ = [
+    "nav_log_info",
+    "update_error_dict",
+    "print_error_info",
+    "handle_log_info",
+    "get_duplicate_e_info",
+    "format_pd",
+    "get_expect_valid_value",
+    "write_to_file",
+    "angle_diff",
+    "EXPORT_COLUMNS",
+    "REF_COLUMNS",
+    "RENAME_COLUMNS",
+    "DROP_COLUMNS",
+    "POS320_COLUMNS",
+    "HP100_COLUMNS",
+]

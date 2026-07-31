@@ -1,14 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import sys
 from PySide6.QtCore import QObject, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
+from pathlib import Path
 
 from src import HANDLE_ITEM, HandleItem, Point
 from src.handler.position import PositionUIProcessor
 from src.handler.pps import PPSUIProcessor
 from src.ui.antenna import AntennaUI
-from src.util.const import LocalPath
+from src.util import utils
 from src.util.msg import Message
 from src.view import MainView
 
@@ -35,7 +36,6 @@ class MainController(QObject):
         self.init_ui()
 
     def init_ui(self):
-        self.view.box_fix.setEnabled(False)
         if self.action == HandleItem.EXTERNAL:
             self.view.box_mode.setCurrentIndex(1)
             self.view.box_mode.setEnabled(False)
@@ -79,21 +79,31 @@ class MainController(QObject):
                 self.view.show_warning(Message.MSG_POINT_INVALID)
                 return
         else:
-            try:
-                lat = float(self.view.edit_lat.text().strip())
-                lng = float(self.view.edit_lng.text().strip())
-                hgt = float(self.view.edit_hgt.text().strip())
-            except ValueError:
-                self.view.show_warning(Message.MSG_COORDINATE_TYPE_ERROR)
-                return
+            if not self.view.box_std.isChecked():
+                try:
+                    lat = float(self.view.edit_lat.text().strip())
+                    lng = float(self.view.edit_lng.text().strip())
+                    hgt = float(self.view.edit_hgt.text().strip())
+                except ValueError:
+                    self.view.show_warning(Message.MSG_COORDINATE_TYPE_ERROR)
+                    return
 
-        point = self.view.edit_ref.text() if is_moving else Point(lat, lng, hgt)
+        if is_moving:
+            point = self.view.edit_ref.text()
+        elif not self.view.box_std.isChecked():
+            point = Point(lat, lng, hgt)
+        else:
+            point = Point(0, 0, 0)
+
         self.view.set_element_enable(False)
 
         self.position.processor.filepath = self.view.filepath
         self.position.processor.std_mode = self.view.box_std.isChecked()
-        self.position.processor.fix_mode = self.view.box_fix.currentIndex()
         self.position.processor.check_list = check_list
+        self.position.processor.top_n = self.view.spin_top_n.value()
+        self.position.processor.elev = self.view.spin_elev.value()
+        self.position.processor.threshold = self.view.spin_threshold.value()
+        self.position.processor.fixed_threshold = self.view.spin_fix_threshold.value()
         self.position.processor.prefix_list = [
             # e.upper().encode() for e in Variable.json_settings.get("prefix_list")
         ]
@@ -119,9 +129,14 @@ class MainController(QObject):
 
     def gen_scenes(self):
         scenes = []
+        json_file = self.view.edit_json.text().strip()
+        if not json_file:
+            self.view.show_warning(Message.MSG_REPORT_JSON_EMPTY)
+            return scenes
+
         try:
             report_json = json.load(
-                open(LocalPath.REPORT_JSON, "r", encoding="utf-8", errors="ignore")
+                open(json_file, "r", encoding="utf-8", errors="ignore")
             )
         except json.JSONDecodeError:
             self.view.show_warning(Message.MSG_REPORT_JSON_INVALID)
@@ -132,8 +147,16 @@ class MainController(QObject):
 
         date = report_json.get("Date", None)
         if not date:
-            self.view.show_warning(Message.MSG_DATE_EMPTY)
-            return scenes
+            # 从第一个 log 文件自动检测日期
+            check_list = self.position.processor.check_list
+            if check_list:
+                _files = [f.text() if not isinstance(f, str) else f for f in check_list]
+                date = utils.get_date_from_log(
+                    *[str(Path(self.view.filepath) / f) for f in _files]
+                )
+            if not date:
+                self.view.show_warning(Message.MSG_DATE_EMPTY)
+                return scenes
 
         try:
             datetime.strptime(date, "%Y%m%d")
@@ -142,22 +165,34 @@ class MainController(QObject):
             return scenes
 
         times = report_json.get("Time", [])
+        if times:
+            names = [t["Scene"] for t in times]
+            if len(names) != len(set(names)):
+                self.view.show_warning(f"场景名称重复: {names}")
+                return scenes
         if not times:
             self.view.show_warning(Message.MSG_TIME_EMPTY)
             return scenes
 
         for t in times:
             try:
+                offset = timedelta(days=1) if t.get("NextDay") else timedelta()
+                begin_dt = (
+                    datetime.strptime(f"{date} {t['BeginTime']}", "%Y%m%d %H%M%S")
+                    + offset
+                )
+                end_dt = (
+                    datetime.strptime(f"{date} {t['EndTime']}", "%Y%m%d %H%M%S")
+                    + offset
+                )
+                if not t.get("NextDay") and t["EndTime"] <= t["BeginTime"]:  # 跨午夜
+                    end_dt += timedelta(days=1)
                 scenes.append(
                     {
                         "id": t["Scene"],
                         "name": t["Scene"],
-                        "begin_time": datetime.strptime(
-                            f"{date} {t['BeginTime']}", "%Y%m%d %H%M%S"
-                        ).strftime("%Y-%m-%dT%H:%M:%S"),
-                        "end_time": datetime.strptime(
-                            f"{date} {t['EndTime']}", "%Y%m%d %H%M%S"
-                        ).strftime("%Y-%m-%dT%H:%M:%S"),
+                        "begin_time": begin_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "end_time": end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
                     }
                 )
             except ValueError:
@@ -189,8 +224,13 @@ class MainController(QObject):
             self.view.show_warning(Message.MSG_COORDINATE_RANGE_ERROR)
 
     def check_json_file(self):
-        if LocalPath.REPORT_JSON.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(LocalPath.REPORT_JSON)))
+        json_file = self.view.edit_json.text().strip()
+        if not json_file:
+            self.view.show_warning(Message.MSG_REPORT_JSON_EMPTY)
+            return
+
+        if Path(json_file).exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(json_file)))
         else:
             self.view.show_warning(Message.MSG_REPORT_JSON_NOT_FOUND)
 

@@ -28,10 +28,10 @@
 
 <div id="chart-container" style="width: 100%;"></div>
 
+<script src="{{ data_file }}"></script>
 <script type="text/javascript">
     // 存储所有chart实例，用于窗口大小调整
     var myArray = [];
-	var reportData = {{ test_datas }};
     
     // 遍历window.reportData，动态生成图表
     for (var chartName in reportData) {

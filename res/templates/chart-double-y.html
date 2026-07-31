@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block script %}
+{% if chart_js is defined %}
+<script src="{{ chart_js }}"></script>
+{% else %}
+<script src="../assets/js/echarts.min.js"></script>
+{% endif %}
+{% endblock %}
+
+{% block style %}
+.chart-container {
+	text-align: center;
+	width: 49%;
+	height: 300px;
+	margin: 1px;
+	float: left;
+	padding-top: 20px;
+}
+{% endblock %}
+
+{% block body %}
+{% if description is defined %}
+	<div style='font-weight:bold'>
+		{{ description }}
+	</div>
+{% endif %}
+
+<div id="chart-container" style="width: 100%;"></div>
+
+<script src="{{ data_file }}"></script>
+<script type="text/javascript">
+    // 存储所有chart实例，用于窗口大小调整
+    var myArray = [];
+    
+    // 遍历window.reportData，动态生成图表
+    for (var chartName in reportData) {
+        if (!reportData.hasOwnProperty(chartName)) continue;
+
+        var chartData = reportData[chartName];
+
+        // 创建图表容器div
+        var div = document.createElement('div');
+        div.id = 'chart_' + chartName.replace(/\./g, '_');
+        div.className = 'chart-container';
+        document.getElementById('chart-container').appendChild(div);
+
+        // 初始化echarts实例
+        var myChart = echarts.init(div, {renderer: 'canvas'});
+
+        // 构建图表配置
+        var option = {
+            animation: false,
+            title: {
+                text: chartName,
+                left: "center",
+            },
+            tooltip: {
+                trigger: 'axis'
+            },
+            legend: {
+                bottom: 'bottom',
+            },
+            toolbox: {
+                feature: {
+                    saveAsImage: {},
+                    restore: {},
+                }
+            },
+            dataZoom: [
+                {
+                    type: 'inside',
+                    show: true,
+                    start: 0,
+                    end: 100
+                }
+            ],
+        };
+
+        // 双y轴模式: 对象格式 {axis, series[], yAxis[]}
+        if (chartData.series && chartData.yAxis) {
+            option.xAxis = {
+                type: 'category',
+                boundaryGap: false,
+                data: chartData.axis
+            };
+            option.yAxis = chartData.yAxis;
+            option.series = chartData.series;
+        }
+        // 兼容旧格式: 数组 [axis, {seriesName: data}] —— 自动自适应
+        else if (Array.isArray(chartData)) {
+            var axisData = chartData[0];
+            var seriesData = chartData[1];
+
+            option.xAxis = {
+                type: 'category',
+                boundaryGap: false,
+                data: axisData
+            };
+
+            var seriesNames = Object.keys(seriesData);
+            var seriesList = [];
+            for (var i = 0; i < seriesNames.length; i++) {
+                var name = seriesNames[i];
+                seriesList.push({
+                    name: name,
+                    type: 'line',
+                    data: seriesData[name],
+                    yAxisIndex: (seriesNames.length === 2) ? i : 0
+                });
+            }
+
+            // 两个系列时自动启用双y轴
+            if (seriesNames.length === 2) {
+                option.yAxis = [
+                    {type: 'value', scale: true, name: seriesNames[0]},
+                    {type: 'value', scale: true, name: seriesNames[1], splitLine: {show: false}}
+                ];
+            } else {
+                option.yAxis = {type: 'value', scale: true};
+            }
+
+            option.series = seriesList;
+        }
+
+        // 设置图表配置
+        myChart.setOption(option);
+        myArray.push(myChart);
+    }
+    
+    // 窗口大小调整时自适应
+    myArray.forEach(function(e) {
+        window.addEventListener("resize", function() {
+            e.resize();
+        });
+    });
+</script>
+{% endblock %}

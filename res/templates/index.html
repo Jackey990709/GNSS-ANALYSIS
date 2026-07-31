@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GNSS分析报告</title>
+    <title>GNSS Report</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -14,29 +14,9 @@
         <!-- 左侧导航 -->
         <nav id="sidebar">
             <div class="sidebar-header">
-                <h2>GNSS 分析报告</h2>
+                <h2>GNSS Report</h2>
             </div>
-            <ul id="nav-list">
-                <li><a href="#page-summary" data-page="summary" class="active">精度报告</a></li>
-                <li><a href="#page-satellites" data-page="satellites">卫星数</a></li>
-                <li class="nav-group">
-                    <a href="javascript:void(0)" class="nav-group-toggle">CN0 <span class="arrow">▶</span></a>
-                    <ul class="nav-group-items">
-                        <li><a href="#page-gps" data-page="gps-cn0">GPS CN0</a></li>
-                        <li><a href="#page-bds-1" data-page="bds-1-cn0">BDS CN0</a></li>
-                        <li><a href="#page-bds-2" data-page="bds-2-cn0">BDS CN0</a></li>
-                        <li><a href="#page-gal-cn0" data-page="gal-cn0">GAL CN0</a></li>
-                        <li><a href="#page-glo-cn0" data-page="glo-cn0">GLO CN0</a></li>
-                    </ul>
-                </li>
-                <li><a href="#page-speed" data-page="speed">速度误差</a></li>
-                <li><a href="#page-dop" data-page="dop">DOP值</a></li>
-                <li><a href="#page-distance" data-page="distance">水平误差</a></li>
-                <li><a href="#page-distance4" data-page="distance4">固定解误差</a></li>
-                <li><a href="#page-rtk-delay" data-page="rtk-delay">RTK时延</a></li>
-                <li><a href="#page-fix-label" data-page="fix-label">定位标识</a></li>
-                <li><a href="#page-time" data-page="time">时间连续性</a></li>
-            </ul>
+            <ul id="nav-list"></ul>
         </nav>
 
         <!-- 右侧主要内容 -->
@@ -59,55 +39,96 @@
     </div>
 
     <script>
-        const pageMap = {
-            'summary': 'data/report.html',
-            'time': 'data/时间连续性.html',
-            'dop': 'data/DOP值.html',
-            'satellites': 'data/卫星数.html',
-            'gps-cn0': 'data/GPS_CN0.html',
-            'bds-1-cn0': 'data/BDS_1_CN0.html',
-            'bds-2-cn0': 'data/BDS_2_CN0.html',
-            'gal-cn0': 'data/GAL_CN0.html',
-            'glo-cn0': 'data/GLO_CN0.html',
-            'speed': 'data/速度误差.html',
-            'distance': 'data/水平误差2D.html',
-            'distance4': 'data/固定解误差.html',
-            'rtk-delay': 'data/RTK时延.html',
-            'fix-label': 'data/定位标识符.html'
-        };
+        /** 导航结构数据：仅需 label 和 children，href 自动从 label 推导 */
+        const navItems = [
+            { label: 'Report' },
+            { label: 'Satellites Trend' },
+            { label: 'SVs Used Trend' },
+            { label: 'CN0 Trend', children: [
+                { label: 'GPS CN0' },
+                { label: 'BDS1 CN0' },
+                { label: 'BDS2 CN0' },
+                { label: 'GAL CN0' },
+                { label: 'GLO CN0' },
+                { label: 'QZSS CN0' },
+                { label: 'IRNSS CN0' },
+            ]},
+            { label: 'SOG Trend' },
+            { label: 'COG Trend' },
+            { label: 'DOP Trend' },
+            { label: 'Alt/Sep Trend' },
+            { label: 'Accuracy Trend' },
+            { label: 'Time Continuity' },
+            { label: 'Fix Accuracy Trend' },
+            { label: 'Float Accuracy Trend' },
+            { label: 'RTK Delay' },
+        ];
+
+        /** label → data/xxx.html */
+        function labelToHref(label) {
+            return 'data/' + label.toLowerCase().replace(/[\s/]+/g, '_') + '.html';
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
-            const navLinks = document.querySelectorAll('#nav-list > li > a, #nav-list .nav-group-items li a');
-            const navGroupToggles = document.querySelectorAll('.nav-group-toggle');
+            const navList = document.getElementById('nav-list');
             const pageFrame = document.getElementById('page-frame');
 
-            function loadPage(pageKey) {
-                const src = pageMap[pageKey];
-                if (src && pageFrame) {
-                    pageFrame.src = src;
-                }
+            function renderNav() {
+                navList.innerHTML = '';
+                navItems.forEach(item => {
+                    if (item.children) {
+                        const li = document.createElement('li');
+                        li.className = 'nav-group';
+                        li.innerHTML = `<a href="javascript:void(0)" class="nav-group-toggle">${item.label} <span class="arrow">▶</span></a>`;
+                        const ul = document.createElement('ul');
+                        ul.className = 'nav-group-items';
+                        item.children.forEach(child => {
+                            const a = document.createElement('a');
+                            a.href = '#';
+                            a.setAttribute('data-href', labelToHref(child.label));
+                            a.textContent = child.label;
+                            ul.appendChild(document.createElement('li')).appendChild(a);
+                        });
+                        li.appendChild(ul);
+                        navList.appendChild(li);
+                    } else {
+                        const href = labelToHref(item.label);
+                        const a = document.createElement('a');
+                        a.href = '#';
+                        a.setAttribute('data-href', href);
+                        a.textContent = item.label;
+                        if (href === 'data/report.html') a.className = 'active';
+                        navList.appendChild(document.createElement('li')).appendChild(a);
+                    }
+                });
             }
 
-            navGroupToggles.forEach(toggle => {
-                toggle.addEventListener('click', function(e) {
+            function loadPage(href) {
+                if (href && pageFrame) pageFrame.src = href;
+            }
+
+            navList.addEventListener('click', function(e) {
+                const a = e.target.closest('a');
+                if (!a) return;
+
+                if (a.classList.contains('nav-group-toggle')) {
                     e.preventDefault();
                     e.stopPropagation();
-                    const group = this.closest('.nav-group');
-                    group.classList.toggle('expanded');
-                });
-            });
+                    a.closest('.nav-group').classList.toggle('expanded');
+                    return;
+                }
 
-            navLinks.forEach(link => {
-                link.addEventListener('click', function(e) {
+                const href = a.getAttribute('data-href');
+                if (href) {
                     e.preventDefault();
-                    document.querySelectorAll('#nav-list a').forEach(l => l.classList.remove('active'));
-                    this.classList.add('active');
-                    const pageKey = this.getAttribute('data-page');
-                    loadPage(pageKey);
-                });
+                    navList.querySelectorAll('a').forEach(l => l.classList.remove('active'));
+                    a.classList.add('active');
+                    loadPage(href);
+                }
             });
 
-            loadPage('summary');
+            renderNav();
+            loadPage('data/report.html');
         });
     </script>
 </body>

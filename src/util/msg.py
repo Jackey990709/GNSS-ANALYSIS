@@ -19,6 +19,7 @@ class Message:
     MSG_TIME_INVALID: str = "REPORT-UTC.json时间格式错误(格式：HHMMSS)！"
     MSG_REPORT_JSON_INVALID: str = "REPORT-UTC.json格式错误！"
     MSG_REPORT_JSON_NOT_FOUND: str = "REPORT-UTC.json未找到！"
+    MSG_REPORT_JSON_EMPTY: str = "REPORT-UTC.json未指定！"
 
 
 class DialogMessage:

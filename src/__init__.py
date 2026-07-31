@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-VERSION: str = "v1.2"
+VERSION: str = "v2.0"
 
 
 class HandleItem(IntEnum):
@@ -30,11 +30,22 @@ class NMEAHeader:
     GGA: str = "GGA,"
     GSA: str = "GSA,"
     GSV: str = "GSV,"
+    VTG: str = "VTG,"
+    GLL: str = "GLL,"
 
     GNRMC: str = "GNRMC,"
     GPRMC: str = "GPRMC,"
     GNGGA: str = "GNGGA,"
     GPGGA: str = "GPGGA,"
+
+    PQTMVEL: str = "PQTMVEL,"
+    PQSOL: str = "PQSOL,"
+    PCAS50: str = "PCAS50,"
+    PQTMTAR: str = "PQTMTAR,"
+    PSTMDRPVA: str = "PSTMDRPVA,"
+    PQTMDRPVA: str = "PQTMDRPVA,"
+    PQTMVEHATT: str = "PQTMVEHATT,"
+    HEADINGA: str = "HEADINGA,"
 
     TTFF_P: str = GGA
 

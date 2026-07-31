@@ -8,11 +8,22 @@ class NMEAHeaderByte:
     GGA_BYTE: bytes = NMEAHeader.GGA.encode()
     GSA_BYTE: bytes = NMEAHeader.GSA.encode()
     GSV_BYTE: bytes = NMEAHeader.GSV.encode()
+    VTG_BYTE: bytes = NMEAHeader.VTG.encode()
+    GLL_BYTE: bytes = NMEAHeader.GLL.encode()
 
     GNRMC_BYTE: bytes = NMEAHeader.GNRMC.encode()
     GPRMC_BYTE: bytes = NMEAHeader.GPRMC.encode()
     GNGGA_BYTE: bytes = NMEAHeader.GNGGA.encode()
     GPGGA_BYTE: bytes = NMEAHeader.GPGGA.encode()
+
+    PQTMVEL_BYTE: bytes = NMEAHeader.PQTMVEL.encode()
+    PQSOL_BYTE: bytes = NMEAHeader.PQSOL.encode()
+    PCAS50_BYTE: bytes = NMEAHeader.PCAS50.encode()
+    PQTMTAR_BYTE: bytes = NMEAHeader.PQTMTAR.encode()
+    PSTMDRPVA_BYTE: bytes = NMEAHeader.PSTMDRPVA.encode()
+    PQTMDRPVA_BYTE: bytes = NMEAHeader.PQTMDRPVA.encode()
+    PQTMVEHATT_BYTE: bytes = NMEAHeader.PQTMVEHATT.encode()
+    HEADINGA_BYTE: bytes = NMEAHeader.HEADINGA.encode()
 
 
 class Default:
@@ -33,6 +44,8 @@ sys_type = {
     "$GLGSV": "glo",
     "$GAGSV": "gal",
     "$BDGSV": "bds",
+    "$GQGSV": "qzs",
+    "$GIGSV": "irn",
 }
 
 gp_sys = {
@@ -69,17 +82,30 @@ ga_sys = {
     "7": "e1",  # GAL-L1-BC
 }
 
+gq_sys = {
+    "1": "q1",  # QZS-L1 C/A
+    "5": "q2",  # QZS-L2CM
+    "6": "q2",  # QZS-L2CL
+    "7": "q5",  # QZS-L5I
+    "8": "q5",  # QZS-L5Q
+}
+gi_sys = {
+    "1": "i5",  # IRNSS-L5I
+}
+
 # sat_label_list1 = [DictKey.GPGSV, DictKey.GBGSV, DictKey.GLGSV, DictKey.GAGSV, DictKey.BDGSV_2]
 sys_label_list = list(sys_type.values())
 sat_sys_list = list(sys_type.keys())
 
-sys_list = ["gps", "bds", "glo", "gal"]
+sys_list = ["gps", "bds", "glo", "gal", "qzs"]
 sat_sys = {
     sat_sys_list[0]: gp_sys,
     sat_sys_list[1]: gb_sys,
     sat_sys_list[2]: gl_sys,
     sat_sys_list[3]: ga_sys,
     sat_sys_list[4]: gb_sys,
+    sat_sys_list[5]: gq_sys,
+    sat_sys_list[6]: gi_sys,
 }
 
 freq_list = ["l1", "l2", "l5"]
@@ -100,6 +126,10 @@ sat_freq_combinations = (
     ("gal", "e5b"),
     ("gal", "e6"),
     ("gal", "e1"),
+    ("qzs", "q1"),
+    ("qzs", "q2"),
+    ("qzs", "q5"),
+    ("irn", "i5"),
 )
 
 _freq_list = [f"{sat_sys}_{sat_freq}" for sat_sys, sat_freq in sat_freq_combinations]
@@ -110,6 +140,15 @@ _min_list = [f"{sat_sys}_{sat_freq}_min" for sat_sys, sat_freq in sat_freq_combi
 
 filter_list = _freq_list + _cnt_list
 snr_list = filter_list + _sum_list + _max_list + _min_list
+
+gsa_sys_id = {
+    "1": "gps",
+    "2": "glo",
+    "3": "gal",
+    "4": "bds",
+    "5": "qzs",
+    "6": "irn",
+}
 
 __all__ = [
     "NMEAHeaderByte",
@@ -125,4 +164,5 @@ __all__ = [
     "sat_freq_combinations",
     "freq_list",
     "snr_list",
+    "gsa_sys_id",
 ]

@@ -18,6 +18,11 @@ class GSAParser(NMEAParser):
         _gsa_split = self.nmea_split
 
         try:
+            self._sat_count = 12 - _gsa_split[3:15].count("")
+        except (IndexError, ValueError):
+            self._sat_count = Default.DEFAULT_NAN
+
+        try:
             self._pdop = float(_gsa_split[15])
         except (IndexError, ValueError):
             self._pdop = Default.DEFAULT_NAN
@@ -28,13 +33,24 @@ class GSAParser(NMEAParser):
             self._hdop = Default.DEFAULT_NAN
 
         try:
-            self._vdop = (
-                float(_gsa_split[17].split("*")[0])
-                if "*" in _gsa_split[17]
-                else float(_gsa_split[17])
-            )
+            if len(_gsa_split) == 18:
+                self._vdop = float(_gsa_split[17].split("*")[0])
+            else:
+                self._vdop = float(_gsa_split[17])
         except (IndexError, ValueError):
             self._vdop = Default.DEFAULT_NAN
+
+        try:
+            if len(_gsa_split) == 19:
+                self._sys_id = _gsa_split[18].split("*")[0]
+            else:
+                self._sys_id = ""
+        except (IndexError, ValueError):
+            self._sys_id = ""
+
+    @property
+    def sat_count(self):
+        return self._sat_count
 
     @property
     def pdop(self):
@@ -47,3 +63,7 @@ class GSAParser(NMEAParser):
     @property
     def vdop(self):
         return check_value(self._vdop)
+
+    @property
+    def sys_id(self):
+        return self._sys_id

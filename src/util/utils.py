@@ -8,7 +8,6 @@ import pandas as pd
 
 from src.libs.nmea import Default
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -64,7 +63,7 @@ def create_folder(folder_path):
 
 
 def calc_value(total: float, n: float) -> float:
-    if np.isnan(n):
+    if total == 0 or np.isnan(n):
         return np.nan
     try:
         return round(n / total * 100, Default.PERCENT_DECIMAL_DIGIT)
@@ -78,6 +77,35 @@ def decode_line(line: bytes) -> tuple[bool, str]:
         return (False, line_str) if line_str[0] in ["$", "#"] else (True, line_str)
     except UnicodeDecodeError:
         return True, line.decode(errors="replace")
+
+
+def get_date_from_log(*filepaths: str, skip_count: int = 30) -> str:
+    """遍历 NMEA log 文件，取第一个找到的有效日期（跳过前 skip_count 条 status=='A' 的 RMC）"""
+    from src.libs.nmea import NMEAHeaderByte
+    from src.libs.nmea.rmc import RMCParser
+
+    for fp in filepaths:
+        count = 0
+        with open(fp, "rb") as f:
+            for line in f:
+                if NMEAHeaderByte.RMC_BYTE in line:
+                    err_code, line_str = decode_line(line)
+                    parser = RMCParser(line_str, error_code=err_code)
+                    if parser.status != "A":
+                        count = 0
+                        continue
+                    count += 1
+                    if count <= skip_count:
+                        continue
+                    utc_date = parser.utc_date
+                    if (
+                        isinstance(utc_date, str)
+                        and len(utc_date) == 6
+                        and utc_date[4:] != "80"
+                    ):
+                        day, month, year = utc_date[:2], utc_date[2:4], utc_date[4:]
+                        return f"20{year}{month}{day}"
+    return ""
 
 
 a = 6378137

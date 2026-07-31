@@ -12,6 +12,11 @@ class RMCParser(NMEAParser):
         _rmc_split = self.nmea_split
 
         try:
+            self._status = _rmc_split[2]
+        except IndexError:
+            self._status = ""
+
+        try:
             self._utc_date = _rmc_split[9] or Default.DEFAULT_NAN
             float(self._utc_date)
         except (IndexError, ValueError):
@@ -39,6 +44,10 @@ class RMCParser(NMEAParser):
             self._yaw = Default.DEFAULT_NAN
 
     @property
+    def status(self):
+        return self._status
+
+    @property
     def utc_time(self):
         return self._utc_time
 
@@ -56,6 +65,14 @@ class RMCParser(NMEAParser):
         :return: utc日期时间格式, 2007-09-08T04:22:09.800
         """
         if isinstance(self.utc_date, str) and len(self.utc_date) != 6:
+            return Default.DEFAULT_NAN
+
+        # 处理utc_date为1980的情况, 代表无效日期
+        if (
+            isinstance(self.utc_date, str)
+            and len(self.utc_date) == 6
+            and self.utc_date[4:] == "80"
+        ):
             return Default.DEFAULT_NAN
 
         if self.utc_date and self.utc_time:

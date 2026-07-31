@@ -51,14 +51,14 @@ class GGAParser(NMEAParser):
             self._lng = Default.DEFAULT_NAN
 
         try:
-            self._hgt = _gga_split[9] or Default.DEFAULT_NAN
-        except IndexError:
-            self._hgt = Default.DEFAULT_NAN
+            self._alt = float(_gga_split[9])
+        except (IndexError, ValueError):
+            self._alt = Default.DEFAULT_NAN
 
         try:
-            self._alt = _gga_split[11] or 0
-        except IndexError:
-            self._alt = Default.DEFAULT_NAN
+            self._sep = float(_gga_split[11])
+        except (IndexError, ValueError):
+            self._sep = 0.0  # 接收机不输出 geoid separation 时默认假定为 0
 
         try:
             self._fix_label = _gga_split[6] or "0"
@@ -92,11 +92,17 @@ class GGAParser(NMEAParser):
         return self._lng
 
     @property
+    def alt(self):
+        return self._alt
+
+    @property
+    def sep(self):
+        return self._sep
+
+    @property
     def hgt(self):
         try:
-            return round(
-                float(self._hgt) + float(self._alt), Default.KEEP_DECIMAL_DIGIT
-            )
+            return round(self._alt + self._sep, Default.KEEP_DECIMAL_DIGIT)
         except ValueError:
             return Default.DEFAULT_NAN
 

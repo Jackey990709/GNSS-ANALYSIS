@@ -1,31 +1,38 @@
+from __future__ import annotations
+
+from collections import defaultdict
 from datetime import datetime
+import json
 import logging
 import os
+import warnings
 from pathlib import Path
 from threading import Event
-from typing import Any, Optional, Union
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QCheckBox
+from typing import Any, Optional, TYPE_CHECKING, Union
+
+from src.libs.nmea.headinga import HEADINGAParser
+from src.libs.nmea.pcas50 import PCAS50Parser
+from src.libs.nmea.pqsol import PQSOLParser
+from src.libs.nmea.pqtmdrprva import PQTMDRPVAParser
+from src.libs.nmea.pqtmtar import PQTMTARParser
+from src.libs.nmea.pqtmvehatt import PQTMVEHATTParser
+from src.libs.nmea.pqtmvel import PQTMVELParser
+from src.libs.nmea.pstmdrprva import PSTMDRPVAParser
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QCheckBox
 import numpy as np
 import pandas as pd
 from src.libs.jsreport import JsReport
-from src.libs.nmea import NMEAHeaderByte, freq_list, snr_list
-from src.util.param import percentiles
+from src.libs.nmea import NMEAHeaderByte, gsa_sys_id, snr_list
+from src.util import percentiles
 
 from src import HandleItem, Point
-from src.handler import (
-    format_pd,
-    get_expect_valid_value,
-    update_error_dict,
-    nav_log_info,
-    print_error_info,
-    write_to_file,
-)
+from src.handler import *
 from src.handler.pos import PosProcessor
 from src.libs.nmea import (
     Default,
     NMEAHeader,
-    sys_list,
     sys_label_list,
     sat_freq_combinations,
 )
@@ -33,44 +40,19 @@ from src.libs.nmea.gga import GGAParser
 from src.libs.nmea.gsa import GSAParser
 from src.libs.nmea.gsv import GSVParser
 from src.libs.nmea.rmc import RMCParser
+from src.libs.nmea.base import _NMEABase
 from src.libs.report import Report
 from src.util import utils
 from src.util.logger import logger
 from src.util.const import File
 from src.util.param import (
-    PERCENT_50,
-    PERCENT_68,
-    PERCENT_95,
-    PERCENT_99,
+    cep_keys,
     position_index_list,
 )
 
 logger = logging.getLogger(__name__)
 
-threshold = 20  # CN0门限
-
-EXPORT_COLUMNS: list = [
-    "label",
-    "lat",
-    "lng",
-    "hgt",
-    "speed",
-    "E",
-    "N",
-    "U",
-    "distance_3d",
-    "distance",
-    "hgt_delta",
-    "speed_delta",
-]
-
-REF_COLUMNS: list = [
-    "ref_label",
-    "ref_lat",
-    "ref_lng",
-    "ref_hgt",
-    "ref_speed",
-]
+threshold = 100  # CN0门限
 
 
 def init_temp_gsv():
@@ -95,9 +77,75 @@ def _format_date_time(value) -> str:
     return str(value) if loc == -1 else str(value)[:loc]
 
 
+def _filter_empty_sections(
+    _index: list[str], result_dict: dict[str, list]
+) -> tuple[list[str], dict[str, list]]:
+    """剔除全空的数据段（如 6-DR、PQTMVEL、Roll/Pitch/Heading 无数据时整段为 NaN）。"""
+    df_result = pd.DataFrame(result_dict, index=_index)
+
+    def _remove_section(
+        keep_mask: list[bool], check_slice: slice, section_start: int
+    ) -> None:
+        """若 check_slice 内的数据行全部为 NaN，则将整段（section_start 到 check_slice.stop）标记为 False。"""
+        section_data = df_result.iloc[check_slice]
+        if not section_data.empty and section_data.isna().all().all():
+            for j in range(section_start, check_slice.stop):
+                keep_mask[j] = False
+
+    def _find_next_blank(start: int) -> int:
+        j = start
+        while j < len(_index) and _index[j] != "":
+            j += 1
+        return j
+
+    keep_mask = [True] * len(_index)
+
+    # ── 1. Px Accuracy 段 ──────────────────────────────────────────
+    for i, label in enumerate(_index):
+        if label == "" and i + 1 < len(_index) and _index[i + 1].endswith(" Accuracy:"):
+            data_end = min(i + 14, len(_index))
+            _remove_section(keep_mask, slice(i + 2, data_end), i)
+
+    # ── 2. PQTMVEL 段 ─────────────────────────────────────────────
+    for i, label in enumerate(_index):
+        if label == "" and i + 1 < len(_index) and _index[i + 1] == "PQTMVEL Result:":
+            data_end = _find_next_blank(i + 2)
+            _remove_section(keep_mask, slice(i + 2, data_end), i)
+
+    # ── 3. Heading 段 ──────────────────────────────────────────────
+    for i, label in enumerate(_index):
+        if (
+            label == ""
+            and i + 1 < len(_index)
+            and _index[i + 1] == "Roll/Pitch/Heading Result:"
+        ):
+            data_end = _find_next_blank(i + 2)
+            _remove_section(keep_mask, slice(i + 2, data_end), i)
+
+    if all(keep_mask):
+        return _index, result_dict
+    new_index = [idx for idx, keep in zip(_index, keep_mask) if keep]
+    new_result = {
+        k: [v for v, keep in zip(vals, keep_mask) if keep]
+        for k, vals in result_dict.items()
+    }
+    return new_index, new_result
+
+
 class PositionAttr:
-    def __init__(self, point: Union[Point, str] = ""):
+    def __init__(
+        self,
+        point: Union[Point, str] = "",
+        top_n: int = 5,
+        elev: int = 0,
+        threshold: int = 0,
+        fix_threshold: float = 0.1,
+    ):
         self.point = point
+        self.top_n = top_n
+        self.elev = elev
+        self.threshold = threshold  # CN0门限
+        self.fixed_threshold = fix_threshold  # 固定解可用精度门限
 
         self.result_path: str = ""
         self.filepath: str = ""
@@ -120,6 +168,7 @@ class PositionAttr:
         self.action: int = HandleItem.INTERNAL
 
         self.stop_event: Optional[Event] = None
+        self._is_pos320 = False
 
     def create(self):
         if not self.filepath:
@@ -131,10 +180,11 @@ class PositionAttr:
             os.makedirs(self.customer_path, exist_ok=True)
 
         if self.action & 1:
-            if self.is_moving:
-                self.result_path = os.path.join(self.filepath, "report", "all")
-            else:
-                self.result_path = os.path.join(self.filepath, "report")
+            # if self.is_moving:
+            #     self.result_path = os.path.join(self.filepath, "report", "all")
+            # else:
+            #     self.result_path = os.path.join(self.filepath, "report")
+            self.result_path = os.path.join(self.filepath, "report", "all")
 
             self.data_path = os.path.join(self.result_path, "data")
             os.makedirs(self.data_path, exist_ok=True)
@@ -162,19 +212,49 @@ class PositionProcessor(PositionAttr):
             "satellites": [],
             "lat": [],
             "lng": [],
+            "alt": [],
+            "sep": [],
             "hgt": [],
             "delay": [],
             "pdop": [],
             "hdop": [],
             "vdop": [],
             "speed": [],
-            "header": [],
+            # "cog": [],
+            # "knot": [],
+            # "kmph": [],
+            # "header": [],
             "yaw": [],
-            "l1_count": [],
-            "l2_count": [],
-            "l5_count": [],
+            "status": [],
+            "pitch": [],
+            "roll": [],
+            "heading": [],
+            # "l1_count": [],
+            # "l2_count": [],
+            # "l5_count": [],
+            "top_cn0": [],
+            "checksum": [],
         }
+
+        if self.is_moving:
+            # 动态增加PQTMVEL解析
+            self.position_dict.update(
+                {
+                    "p_veln": [],
+                    "p_vele": [],
+                    "p_veld": [],
+                    "p_grdspd": [],
+                    "p_spd": [],
+                    "p_heading": [],
+                    "p_grdspdacc": [],
+                    "p_spdacc": [],
+                    "p_headingacc": [],
+                }
+            )
+
         for sat_sys, freq in sat_freq_combinations:
+            if (used_label := f"{sat_sys}_used") not in self.position_dict:
+                self.position_dict[used_label] = []
             self.position_dict[f"{sat_sys}_{freq}"] = []
             self.position_dict[f"{sat_sys}_{freq}_cnt"] = []
             self.position_dict[f"{sat_sys}_{freq}_sum"] = []
@@ -208,22 +288,33 @@ class PositionProcessor(PositionAttr):
                 self._gen_nan_result(result_dict, file[:-4])
                 continue
 
-            # 计算平均坐标值
-            lat_mean, lng_mean, hgt_mean = self._calculate_mean_coordinate(df)
-
             if std_mode:
+                # 计算平均坐标值
+                lat_mean, lng_mean, hgt_mean = self._calculate_mean_coordinate(df)
                 self.point = Point(lat=lat_mean, lng=lng_mean, hgt=hgt_mean)
 
-            self._calc_static_data(df, lat_mean, lng_mean, hgt_mean, std_mode)
+            self._calc_static_data(df, freq)
+            if self.scenes:
+                self.df_datas[file]["calc"] = df
+                self.df_datas[file]["freq"] = freq
 
             if self.result_path:
                 write_to_file(
-                    df[EXPORT_COLUMNS],
+                    df[EXPORT_COLUMNS + ["mis_seconds"]],
                     self.data_path,
                     f"{file[:-4]}{File.CALC_FILE_EXT}",
                 )
 
-            self._gen_result(result_dict, file[:-4], df, freq, df_expect, df_valid)
+            self._gen_result(
+                result_dict,
+                file[:-4],
+                df,
+                freq,
+                df_expect,
+                df_valid,
+                checksum_fail=_NMEABase.total_failed,
+                nmea_missing=_NMEABase.total_missing,
+            )
 
             nav_log, log_info = nav_log_info(
                 nav_log, log_info, temp_log, file, self.callback
@@ -247,6 +338,10 @@ class PositionProcessor(PositionAttr):
             is_ttff=is_ttff,
         )
 
+        self.gen_split_report()
+
+        Report.finalize_workbooks()
+
         self.print_msg(f"报告生成完成")
 
     def process_moving_data(
@@ -260,8 +355,13 @@ class PositionProcessor(PositionAttr):
         self.check_list: list[str] = self._normalize_check_list()
 
         self.print_msg(f"开始处理参考: {self.point}")
-
-        df_ref, *_ = self._generate_dateframe(self.point, write_file=False)
+        skiprows, length = self.check_file_type()
+        if self._is_pos320:
+            df_ref = self._generate_pos_dateframe(
+                self.point, skiprows=skiprows, length=length
+            )
+        else:
+            df_ref, *_ = self._generate_dateframe(self.point, write_file=False)
 
         if df_ref is None or df_ref.empty:
             self.print_msg('<font color="red">参考无效！</font>')
@@ -284,31 +384,11 @@ class PositionProcessor(PositionAttr):
                 callback=self.print_msg,
             )
 
-        df_ref = df_ref.rename(
-            columns={
-                "label": "ref_label",
-                "lat": "ref_lat",
-                "lng": "ref_lng",
-                "hgt": "ref_hgt",
-                "speed": "ref_speed",
-            }
-        )
+        df_ref = df_ref.rename(columns=RENAME_COLUMNS, errors="ignore")
         df_ref.drop(
-            columns=snr_list
-            + [
-                "gga_time",
-                "vdop",
-                "hdop",
-                "pdop",
-                "delay",
-                "satellites",
-                "header",
-                "yaw",
-                "l1_count",
-                "l2_count",
-                "l5_count",
-            ],
+            columns=snr_list + DROP_COLUMNS,
             inplace=True,
+            errors="ignore",
         )
 
         self.print_msg("参考处理完成")
@@ -358,13 +438,24 @@ class PositionProcessor(PositionAttr):
 
             if self.result_path:
                 write_to_file(
-                    df[EXPORT_COLUMNS + REF_COLUMNS],
+                    df[
+                        REF_COLUMNS
+                        + EXPORT_COLUMNS
+                        + ["veld_delta", "veln_delta", "vele_delta"]
+                    ],
                     self.data_path,
                     f"{file[:-4]}{File.CALC_FILE_EXT}",
                 )
 
             self._gen_result(
-                result_dict, file[:-4], df, freq, df_expect, df_valid, True
+                result_dict,
+                file[:-4],
+                df,
+                freq,
+                df_expect,
+                df_valid,
+                checksum_fail=_NMEABase.total_failed,
+                nmea_missing=_NMEABase.total_missing,
             )
             nav_log, log_info = nav_log_info(
                 nav_log, log_info, temp_log_info, file, callback
@@ -398,6 +489,8 @@ class PositionProcessor(PositionAttr):
 
         self.gen_split_report()
 
+        Report.finalize_workbooks()
+
         self.print_msg("报告生成完成")
 
     def gen_customer_report(self):
@@ -416,7 +509,11 @@ class PositionProcessor(PositionAttr):
     def _normalize_check_list(self) -> list[str]:
         """标准化检查列表, 处理QCheckBox对象"""
         check_list = [
-            check_file.text() if isinstance(check_file, QCheckBox) else check_file
+            (
+                check_file.text()  # type: ignore[union-attr]
+                if callable(getattr(check_file, "text", None))
+                else check_file
+            )
             for check_file in self.check_list
         ]
 
@@ -439,14 +536,7 @@ class PositionProcessor(PositionAttr):
 
         return lat_mean, lng_mean, hgt_mean
 
-    def _calc_static_data(
-        self,
-        df: pd.DataFrame,
-        lat_mean: float,
-        lng_mean: float,
-        hgt_mean: float,
-        std_mode: bool,
-    ):
+    def _calc_static_data(self, df: pd.DataFrame, freq: float):
         """计算ENU坐标系和各种距离"""
         # 计算ENU坐标系
 
@@ -465,15 +555,35 @@ class PositionProcessor(PositionAttr):
         # 计算高度差和速度差
         df["hgt_delta"] = abs(df["hgt"] - self.point.hgt).round(3)  # type: ignore
         df["speed_delta"] = df["speed"].round(3)
-        df["std_hgt_delta"] = abs(df["hgt"] - hgt_mean).round(3)
+        df["yaw_delta"] = df["yaw"].round(3)
 
-        # 计算内符合精度
-        if std_mode:
-            df["std_distance"] = df["distance"]
-        else:
-            *_, df["std_distance"] = utils.calculate_data(
-                df["lat"], df["lng"], df["hgt"], lat_mean, lng_mean, hgt_mean
-            )
+        pitch_mean = df["pitch"].mean()
+        roll_mean = df["roll"].mean()
+        heading_mean = df["heading"].mean()
+        df["pitch_delta"] = abs(df["pitch"] - pitch_mean).round(5)
+        df["roll_delta"] = angle_diff(df["roll"], roll_mean).round(5)
+        df["heading_delta"] = angle_diff(df["heading"], heading_mean).round(5)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "Mean of empty slice")
+            rms_pitch = np.sqrt(np.nanmean(df["pitch_delta"] ** 2))
+            rms_roll = np.sqrt(np.nanmean(df["roll_delta"] ** 2))
+            rms_heading = np.sqrt(np.nanmean(df["heading_delta"] ** 2))
+        df["rms_pitch_delta"] = abs(df["pitch_delta"] - rms_pitch).round(5)
+        df["rms_roll_delta"] = angle_diff(df["roll_delta"], rms_roll).round(5)
+        df["rms_heading_delta"] = angle_diff(df["heading_delta"], rms_heading).round(5)
+        df["mis_seconds"] = (
+            df.index.to_series().diff().dt.total_seconds().fillna(np.nan).round(3)
+            * freq
+        )
+        # df_utc_time["utc_date_time"].diff().dt.total_seconds() * 1000
+
+        # # 计算内符合精度
+        # if std_mode:
+        #     df["std_distance"] = df["distance"]
+        # else:
+        #     *_, df["std_distance"] = utils.calculate_data(
+        #         df["lat"], df["lng"], df["hgt"], lat_mean, lng_mean, hgt_mean
+        #     )
 
     def _calc_moving_data(self, df):
         df["E"], df["N"], df["U"], df["distance_3d"], df["distance"] = (
@@ -491,7 +601,35 @@ class PositionProcessor(PositionAttr):
             df = df[df["ref_label"] == "4"]
 
         df["hgt_delta"] = abs(df["hgt"] - df["ref_hgt"]).round(3)
-        df["speed_delta"] = abs(df["speed"] - df["ref_speed"]).round(3)
+        df["speed_delta"] = abs(df["speed"] - df["ref_speed"]).round(5)
+        df["yaw_delta"] = angle_diff(df["yaw"], df["ref_yaw"]).round(5)
+        df["pitch_delta"] = abs(df["pitch"] - df["ref_pitch"]).round(5)
+        df["roll_delta"] = angle_diff(df["roll"], df["ref_roll"]).round(5)
+        df["heading_delta"] = angle_diff(df["heading"], df["ref_heading"]).round(5)
+
+        # 计算PQTMVEL数据
+        # | PQTMVEL <Heading> - POS <Heading> | = HeadingErr
+        df["heading_err"] = abs(df["p_heading"] - df["ref_heading"]).round(5)
+
+        # | <GrdSpd>–√(〖<Vel-N>〗^2+〖<Vel-E>〗^2 )| = 2DErr
+        df["2d_err"] = abs(
+            df["p_grdspd"] - np.sqrt(df["p_veln"] ** 2 + df["p_vele"] ** 2)
+        ).round(5)
+
+        # |<Spd> –√(〖<Vel-N>〗^2+〖<Vel-E>〗^2+〖<Vel-D>〗^2 )| =3DErr
+        df["3d_err"] = abs(
+            df["p_spd"]
+            - np.sqrt(df["p_veln"] ** 2 + df["p_vele"] ** 2 + df["p_veld"] ** 2)
+        ).round(5)
+
+        if self._is_pos320:
+            df["veln_delta"] = abs(df["p_veln"] - df["ref_veln"]).round(5)
+            df["vele_delta"] = abs(df["p_vele"] - df["ref_vele"]).round(5)
+            df["veld_delta"] = abs(df["p_veld"] - df["ref_veld"]).round(5)
+        else:
+            df["veln_delta"] = np.nan
+            df["vele_delta"] = np.nan
+            df["veld_delta"] = np.nan
 
     def _generate_dateframe(
         self,
@@ -513,7 +651,73 @@ class PositionProcessor(PositionAttr):
 
         return self._handle_dataframe(file, error_dict, log_info, write_file)
 
+    def _generate_pos_dateframe(self, file, skiprows=0, length=0):
+        df = pd.read_csv(
+            file,
+            sep=r"\s+",
+            header=0,
+            skiprows=range(skiprows),
+            encoding="utf-8",
+            encoding_errors="ignore",
+        )
+
+        if length == 11:
+            df.columns = POS320_COLUMNS
+
+        elif length == 21:
+            df.columns = HP100_COLUMNS
+
+        else:
+            return pd.DataFrame()
+
+        # GPS 时间转 UTC（拆分星期和秒，避免大数纳秒精度丢失）
+        GPS_EPOCH = datetime(1980, 1, 6)
+        LEAP_SECONDS = 18
+        df["utc_date_time"] = (
+            pd.to_datetime(GPS_EPOCH)
+            + pd.to_timedelta(df["week"].astype(int) * 7, unit="D")
+            + pd.to_timedelta(df["gpstime"] - LEAP_SECONDS, unit="s")
+        ).astype("datetime64[us]")
+        df.drop_duplicates(subset=["utc_date_time"], keep="first", inplace=True)
+        df.set_index("utc_date_time", inplace=True)
+        df["speed"] = np.sqrt(df["ref_veln"] ** 2 + df["ref_vele"] ** 2)
+        df["yaw"] = df["heading"]
+        df["label"] = "1"
+        return df
+
+    def check_file_type(self) -> tuple[int, int]:
+        skiprows = 0
+        with open(
+            self.point, "r", encoding="utf-8", errors="ignore"  # pyright: ignore
+        ) as f:
+            for line in f:
+                skiprows += 1
+                if "Roll         Pitch       Heading" in line:
+                    self._is_pos320 = True
+                    length = len(line.split())
+                    return skiprows, length
+                elif "Pitch          Roll       Azimuth" in line:
+                    self._is_pos320 = True
+                    length = len(line.split())
+                    return skiprows + 1, length
+        return 0, 0
+
     def _handle_nmea(self, file_path, error_dict, is_ttff, callback, start_flag=False):
+        _NMEABase.reset_stats()
+
+        # 读取必备句子配置（必须在 _check_rmc_first 之前，避免 NMEAHeader 被变异）
+        required_json = Path(__file__).parents[2] / "settings.json"
+        if required_json.exists():
+            with open(required_json, "r", encoding="utf-8") as f:
+                required_sentence = set(json.load(f).get("required_sentence", []))
+        else:
+            required_sentence = {
+                NMEAHeaderByte.RMC_BYTE.decode(),
+                NMEAHeaderByte.GGA_BYTE.decode(),
+                NMEAHeaderByte.VTG_BYTE.decode(),
+                NMEAHeaderByte.GLL_BYTE.decode(),
+            }
+
         # 确定主要处理的数据类型
         main_type = "rmc" if self._check_rmc_first(file_path) else "gga"
 
@@ -524,26 +728,23 @@ class PositionProcessor(PositionAttr):
 
         # 初始化临时字典
         gsv_cn0_temp_dict: dict = init_temp_gsv()
+        gsa_temp_dict: defaultdict[str, float] = defaultdict(float)
 
-        header = 0
-        header_count = 0
         main_utc_time = ""
         self.init_data()
+        prev_total_failed = 0
+        epoch_missing = required_sentence.copy()
 
         with open(file_path, "rb") as f:
             for line in f:
                 if self.stop_event and self.stop_event.is_set():
                     break
 
+                if line.startswith(b"["):
+                    continue
+
                 line_upper = line.upper()
                 update_error_dict(line_upper, error_dict, self.error_list)
-
-                for prefix in self.prefix_list:
-                    if prefix in line_upper:
-                        header = 1
-                        if not is_ttff:
-                            header_count += 1
-                        break
 
                 nmea_flag = (
                     NMEAHeaderByte.RMC_BYTE in line
@@ -561,16 +762,36 @@ class PositionProcessor(PositionAttr):
                     )
                     if not start_flag and isinstance(parser.utc_time, str):
                         start_flag = True
+                        _NMEABase.counting = True
 
                 if start_flag:
                     # 处理主要类型数据（RMC或GGA）
                     if nmea_flag:
-                        if main_flag and gsv_flag:
-                            gsv_cn0_temp_dict = self._handle_gsv(
-                                gsv_cn0_temp_dict, main_utc_time
-                            )
+                        if main_flag:
+                            if gsv_flag:
+                                gsv_cn0_temp_dict = self._handle_gsv(
+                                    gsv_cn0_temp_dict, main_utc_time
+                                )
+
+                            if gsa_flag:
+                                self._handle_gsa(gsa_temp_dict)
+
+                            # 记录前一历元的checksum fail次数
+                            fail_count = _NMEABase.total_failed - prev_total_failed
+                            self.position_dict["checksum"][-1] = fail_count
+                            prev_total_failed = _NMEABase.total_failed
+
+                            # 累加前一历元的NMEA缺失句子数
+                            _NMEABase.total_missing += len(epoch_missing)
 
                         self.init_data(True)
+                        # 新历元从全集开始，移除当前首句
+                        epoch_missing = required_sentence.copy()
+                        epoch_missing.discard(
+                            NMEAHeaderByte.RMC_BYTE.decode()
+                            if main_type == "rmc"
+                            else NMEAHeaderByte.GGA_BYTE.decode()
+                        )
 
                         err_code, decode_line = utils.decode_line(line)
                         # 设置主要类型数据
@@ -588,6 +809,8 @@ class PositionProcessor(PositionAttr):
                             self.position_dict["satellites"][-1] = parser.satellites
                             self.position_dict["lat"][-1] = parser.lat
                             self.position_dict["lng"][-1] = parser.lng
+                            self.position_dict["alt"][-1] = parser.alt
+                            self.position_dict["sep"][-1] = parser.sep
                             self.position_dict["hgt"][-1] = parser.hgt
                             self.position_dict["delay"][-1] = parser.delay
 
@@ -602,11 +825,6 @@ class PositionProcessor(PositionAttr):
                             else False
                         )
 
-                        self.position_dict["header"][-1] = header
-
-                        if not np.isnan(float(main_utc_time)):
-                            header = 0
-
                     # 处理另一个类型的数据（如果是RMC则处理GGA，反之亦然）
                     elif (
                         NMEAHeaderByte.GGA_BYTE in line
@@ -616,15 +834,19 @@ class PositionProcessor(PositionAttr):
                         err_code, decode_line = utils.decode_line(line)
                         if main_type == "rmc":  # 当前主要类型是RMC，处理GGA数据
                             parser = GGAParser(decode_line, error_code=err_code)
+                            epoch_missing.discard(NMEAHeaderByte.GGA_BYTE.decode())
                             self.position_dict["gga_time"][-1] = parser.utc_time
                             self.position_dict["label"][-1] = parser.fix_label
                             self.position_dict["satellites"][-1] = parser.satellites
                             self.position_dict["lat"][-1] = parser.lat
                             self.position_dict["lng"][-1] = parser.lng
+                            self.position_dict["alt"][-1] = parser.alt
+                            self.position_dict["sep"][-1] = parser.sep
                             self.position_dict["hgt"][-1] = parser.hgt
                             self.position_dict["delay"][-1] = parser.delay
                         else:  # 当前主要类型是GGA，处理RMC数据
                             parser = RMCParser(decode_line, error_code=err_code)
+                            epoch_missing.discard(NMEAHeaderByte.RMC_BYTE.decode())
                             self.position_dict["utc_date_time"][
                                 -1
                             ] = parser.utc_date_time
@@ -633,20 +855,91 @@ class PositionProcessor(PositionAttr):
 
                     # 处理GSA数据
                     elif NMEAHeaderByte.GSA_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        gsa = GSAParser(decode_line, error_code=err_code)
+                        if gsa.sys_id and gsa.sys_id in gsa_sys_id:
+                            key = gsa_sys_id[gsa.sys_id]
+                            gsa_temp_dict[key] += gsa.sat_count
+
                         if not gsa_flag:
-                            err_code, decode_line = utils.decode_line(line)
-                            gsa = GSAParser(decode_line, error_code=err_code)
                             self.position_dict["pdop"][-1] = gsa.pdop
                             self.position_dict["hdop"][-1] = gsa.hdop
                             self.position_dict["vdop"][-1] = gsa.vdop
                             gsa_flag = True
 
+                    # elif NMEAHeaderByte.VTG_BYTE in line:
+                    #     err_code, decode_line = utils.decode_line(line)
+                    #     vtg = VTGParser(decode_line, error_code=err_code)
+                    #     self.position_dict["cog"][-1] = vtg.cog
+                    #     self.position_dict["knot"][-1] = vtg.knot
+                    #     self.position_dict["kmph"][-1] = vtg.kmph
+                    # 记录VTG/GLL句子出现过（NMEA完整性校验）
+                    elif NMEAHeaderByte.VTG_BYTE in line:
+                        epoch_missing.discard(NMEAHeaderByte.VTG_BYTE.decode())
+                    elif NMEAHeaderByte.GLL_BYTE in line:
+                        epoch_missing.discard(NMEAHeaderByte.GLL_BYTE.decode())
                     # 处理GSV数据
                     elif NMEAHeaderByte.GSV_BYTE in line and gsv_flag:
                         self._handle_gsv_dict(gsv_cn0_temp_dict, line)
+                    elif NMEAHeaderByte.PCAS50_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PCAS50Parser(decode_line, error_code=err_code)
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.PQSOL_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PQSOLParser(decode_line, error_code=err_code)
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.PQTMDRPVA_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PQTMDRPVAParser(decode_line, error_code=err_code)
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.PQTMTAR_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PQTMTARParser(decode_line, error_code=err_code)
+                        self.position_dict["status"][-1] = parser.status
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.PQTMVEHATT_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PQTMVEHATTParser(decode_line, error_code=err_code)
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.PSTMDRPVA_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PSTMDRPVAParser(decode_line, error_code=err_code)
+                        self.position_dict["pitch"][-1] = parser.pitch
+                        self.position_dict["roll"][-1] = parser.roll
+                        self.position_dict["heading"][-1] = parser.heading
+                    elif NMEAHeaderByte.HEADINGA_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = HEADINGAParser(decode_line)
+                        self.position_dict["heading"][-1] = parser.heading
+                        self.position_dict["pitch"][-1] = parser.pitch
+                    elif self.is_moving and NMEAHeaderByte.PQTMVEL_BYTE in line:
+                        err_code, decode_line = utils.decode_line(line)
+                        parser = PQTMVELParser(decode_line, error_code=err_code)
+                        self.position_dict["p_veln"][-1] = parser.vel_n
+                        self.position_dict["p_vele"][-1] = parser.vel_e
+                        self.position_dict["p_veld"][-1] = parser.vel_d
+                        self.position_dict["p_grdspd"][-1] = parser.grdspd
+                        self.position_dict["p_spd"][-1] = parser.spd
+                        self.position_dict["p_heading"][-1] = parser.heading
+                        self.position_dict["p_grdspdacc"][-1] = parser.grdspdacc
+                        self.position_dict["p_spdacc"][-1] = parser.spdacc
+                        self.position_dict["p_headingacc"][-1] = parser.headingacc
 
-        if not is_ttff and header_count:
-            error_dict["重启"] = header_count
+        # 记录最后一个历元的checksum fail次数
+        self.position_dict["checksum"][-1] = _NMEABase.total_failed - prev_total_failed
+        # 累加最后一个历元的NMEA缺失句子数
+        _NMEABase.total_missing += len(epoch_missing)
         print_error_info(error_dict, callback)
 
     def _check_rmc_first(self, file_path: str) -> bool:
@@ -724,10 +1017,17 @@ class PositionProcessor(PositionAttr):
 
         return init_temp_gsv()
 
+    def _handle_gsa(self, gsa_temp_dict):
+        for sys, count in gsa_temp_dict.items():
+            key = f"{sys}_used"
+            self.position_dict[key][-1] = count
+
+        gsa_temp_dict.clear()
+
     def _handle_gsv_dict(self, gsv_cn0_temp_dict, line):
         err_code, decode_line = utils.decode_line(line)
         gsv = GSVParser(decode_line, error_code=err_code)
-        sys_label, freq_label, cn0_list = gsv.decode_gsv()
+        sys_label, freq_label, cn0_list = gsv.decode_gsv(self.elev, self.threshold)
         if sys_label in sys_label_list and cn0_list:
             gsv_cn0_temp_dict[sys_label][freq_label] += cn0_list
 
@@ -743,6 +1043,19 @@ class PositionProcessor(PositionAttr):
 
         if self.scenes and write_file:
             self.df_datas.setdefault(file, {"original": df})
+
+        # 计算总卫星数
+        df["total_svs"] = df[
+            [f"{sys}_{freq}_cnt" for sys, freq in sat_freq_combinations]
+        ].sum(axis=1, min_count=1)
+
+        # 计算总CN0
+        df["total_cn0"] = df[
+            [f"{sys}_{freq}_sum" for sys, freq in sat_freq_combinations]
+        ].sum(axis=1, min_count=1)
+
+        # 计算平均CN0
+        df["avg_cn0"] = (df["total_cn0"] / df["total_svs"]).round(2)
 
         if write_file and self.result_path:
             write_to_file(
@@ -791,14 +1104,25 @@ class PositionProcessor(PositionAttr):
                 self.position_dict[f"{key}_max"][-1] = np.nan
                 self.position_dict[f"{key}_min"][-1] = np.nan
 
-        for freq in freq_list:
-            total_count = 0
-            for sat_sys in sys_list:
-                key = f"{sat_sys}_{freq}"
-                if key in cn0_arrays:
-                    total_count += cn0_arrays[key][cn0_arrays[key] > threshold].size
+        # TopN CN0 平均值
+        all_cn0 = np.concatenate(list(cn0_arrays.values()))
+        all_cn0 = all_cn0[~np.isnan(all_cn0)]
+        if all_cn0.size >= self.top_n:
+            top_cn0 = np.sort(all_cn0)[-self.top_n :]
+        else:
+            top_cn0 = all_cn0
+        self.position_dict["top_cn0"][-1] = (
+            round(top_cn0.mean(), 1) if top_cn0.size > 0 else np.nan
+        )
 
-            self.position_dict[f"{freq}_count"][-1] = total_count
+        # for freq in freq_list:
+        #     total_count = 0
+        #     for sat_sys in sys_list:
+        #         key = f"{sat_sys}_{freq}"
+        #         if key in cn0_arrays:
+        #             total_count += cn0_arrays[key][cn0_arrays[key] > threshold].size
+
+        #     self.position_dict[f"{freq}_count"][-1] = total_count
 
     def _gen_report(
         self,
@@ -815,11 +1139,15 @@ class PositionProcessor(PositionAttr):
         if not (self.action & 1):
             return
 
-        df_result = pd.DataFrame(result_dict, index=position_index_list)
+        _index = self._get_filtered_index()
+        _index, result_dict = _filter_empty_sections(_index, result_dict)
+        df_result = pd.DataFrame(result_dict, index=_index)
+
         for col in df_result.columns:
             df_result[col] = df_result[col].fillna("-")
 
         if not df_result.empty and result_path:
+            sheet_name = "All" if begin_time is None else point
             report = Report(
                 df_result,
                 result_path,
@@ -832,8 +1160,14 @@ class PositionProcessor(PositionAttr):
                 is_ttff=is_ttff,
                 begin_time=begin_time,
                 end_time=end_time,
+                sheet_name=sheet_name,
             )
             report.gen_precision_report()
+
+    @staticmethod
+    def _extract_cep(desc: pd.Series, decimal: int = 4) -> list:
+        """从 describe Series 提取 [50%, 68%, 95%, 99.7%, 99%, max]"""
+        return [round(desc[k], decimal) for k in cep_keys] + [desc["max"]]
 
     def _gen_result(
         self,
@@ -843,25 +1177,21 @@ class PositionProcessor(PositionAttr):
         freq,
         df_expect,
         df_valid,
-        is_moving=False,
+        checksum_fail=np.nan,
+        nmea_missing=np.nan,
     ):
-        if "std_distance" not in df.keys():
-            is_moving = True
-
-        if is_moving:
-            hgt_delta_mask = (df["label"].isin(["1", "2", "4", "5", "7"])) & (
-                df["ref_label"] != "0"
-            )
-            df_speed = df[(df["label"].isin(["1", "2", "4", "5", "7"]))]["speed_delta"]
+        mask = df["label"] != "0"
+        if self.is_moving:
+            df_speed = df[mask]["speed_delta"]
+            df_cog = df[mask]["yaw_delta"]
         else:
-            hgt_delta_mask = df["label"] != "0"
             df_speed = df["speed_delta"]
+            df_cog = df["yaw_delta"]
 
-        df_hgt_delta = df[hgt_delta_mask]["hgt_delta"]
+        df_hgt_delta = df[mask]["hgt_delta"]
 
-        distance_mask: pd.Series = df["label"].str.contains("1|2|4|5|7")
-        df_distance: pd.Series = df[distance_mask]["distance"]
-        df_distance_3d: pd.Series = df[distance_mask]["distance_3d"]
+        df_distance: pd.Series = df[mask]["distance"]
+        df_distance_3d: pd.Series = df[mask]["distance_3d"]
 
         cn0_data = {}
         for sat_sys, sat_freq in sat_freq_combinations:
@@ -879,262 +1209,238 @@ class PositionProcessor(PositionAttr):
             "df_hgt_delta": df_hgt_delta,
             "df_distance_3d": df_distance_3d,
             "df_speed": df_speed,
+            "df_cog": df_cog,
+            "df_satellites": df["satellites"],
+            "df_visibled_satellites": df["total_svs"],
+            "df_avg_cn0": df["avg_cn0"],
+            "df_top_cn0": df["top_cn0"],
+            "df_pitch_delta": df["pitch_delta"],
+            "df_roll_delta": df["roll_delta"],
+            "df_heading_delta": df["heading_delta"],
         }
 
-        for label in ["1", "2", "4", "5"]:
-            stats_to_calculate[f"df_{label}"] = df[df["label"] == label]["distance"]
-            stats_to_calculate[f"df_{label}_hgt_delta"] = df[df["label"] == label][
-                "hgt_delta"
-            ]
+        if not self.is_moving:
+            stats_to_calculate["df_rms_pitch_delta"] = df["rms_pitch_delta"]
+            stats_to_calculate["df_rms_roll_delta"] = df["rms_roll_delta"]
+            stats_to_calculate["df_rms_heading_delta"] = df["rms_heading_delta"]
+        else:
+            stats_to_calculate["df_heading_err"] = df["heading_err"]
+            stats_to_calculate["df_2d_err"] = df["2d_err"]
+            stats_to_calculate["df_3d_err"] = df["3d_err"]
+            stats_to_calculate["df_veln_delta"] = df["veln_delta"]
+            stats_to_calculate["df_vele_delta"] = df["vele_delta"]
+            stats_to_calculate["df_veld_delta"] = df["veld_delta"]
 
-        df_0 = df[df["label"] == "0"]["distance"]
+        for label in "01234567":
+            stats_to_calculate[f"df_{label}"] = df[df["label"] == label]["distance"]
+            if label != "0":
+                stats_to_calculate[f"df_{label}_hgt_delta"] = df[df["label"] == label][
+                    "hgt_delta"
+                ]
 
         for key, data in stats_to_calculate.items():
-            stats_describe[key] = data.describe(percentiles=percentiles)
+            stats_describe[key] = data.describe(percentiles=percentiles).round(4)
 
-        df_dop = df[df["label"].str.contains("1|2|4|5")]
+        df_dop = df[mask][["pdop", "hdop", "vdop"]]
+        fixed_avalible = stats_to_calculate["df_4"][
+            stats_to_calculate["df_4"] < self.fixed_threshold
+        ].shape[0]
+        fixed_available_rate = utils.calc_value(
+            stats_to_calculate["df_4"].shape[0], fixed_avalible
+        )
+
+        if not self.is_moving:
+            df_misseconds = df["mis_seconds"].dropna()
+            mis_seconds = (df_misseconds != 1.0).sum()
+        else:
+            mis_seconds = np.nan
 
         result_dict[file] = [
             _format_date_time(df.index[0]),
             _format_date_time(df.index[-1]),
             round((df.index[-1] - df.index[0]).total_seconds() / 3600, 1),
             f"{freq}HZ",
-            round(df["satellites"].mean(), 2),
+            round(df_dop["pdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
+            round(df_dop["hdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
+            round(df_dop["vdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
+            stats_describe["df_satellites"]["mean"].round(1),
+            *self._extract_cep(stats_describe["df_satellites"]),
+            *self._extract_cep(stats_describe["df_visibled_satellites"]),
+            "",
+            stats_describe["df_avg_cn0"]["mean"].round(1),
+            *self._extract_cep(stats_describe["df_avg_cn0"], decimal=1),
+            *self._extract_cep(stats_describe["df_top_cn0"], decimal=1),
             f"{cn0_values['gps_l1']}+{cn0_values['gps_l2']}+{cn0_values['gps_l5']}",
             f"{cn0_values['bds_b1i']}+{cn0_values['bds_b2a']}+{cn0_values['bds_b2b']}",
             f"{cn0_values['bds_b1c']}+{cn0_values['bds_b2i']}+{cn0_values['bds_b3i']}",
             f"{cn0_values['gal_e1']}+{cn0_values['gal_e5a']}+{cn0_values['gal_e5b']}+{cn0_values['gal_e6']}",
             f"{cn0_values['glo_g1']}+{cn0_values['glo_g2']}",
-            round(df_dop["pdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
-            round(df_dop["hdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
-            round(df_dop["vdop"].mean(), Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_value(df_expect, df_valid),  # 实际定位率
-            utils.calc_value(df_expect, df_0.shape[0]),  # 未定位比率
-            utils.calc_value(
-                df_expect, stats_to_calculate["df_1"].shape[0]
-            ),  # 单点比率
-            utils.calc_value(
-                df_expect, stats_to_calculate["df_2"].shape[0]
-            ),  # 差分比率
-            utils.calc_value(
-                df_expect, stats_to_calculate["df_4"].shape[0]
-            ),  # 固定解比率
-            utils.calc_value(
-                df_expect, stats_to_calculate["df_5"].shape[0]
-            ),  # 浮点解比率
+            f"{cn0_values['qzs_q1']}+{cn0_values['qzs_q2']}+{cn0_values['qzs_q5']}",
+            f"{cn0_values['irn_i5']}",
+            f"{utils.calc_value(df_expect, df_valid)}%({df_valid})",  # 实际定位率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_0'].shape[0])}%({stats_to_calculate['df_0'].shape[0]})",  # 0-未定位比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_1'].shape[0])}%({stats_to_calculate['df_1'].shape[0]})",  # 1-单点比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_2'].shape[0])}%({stats_to_calculate['df_2'].shape[0]})",  # 2-差分比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_3'].shape[0])}%({stats_to_calculate['df_3'].shape[0]})",  # 3-单点比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_4'].shape[0])}%({stats_to_calculate['df_4'].shape[0]})",  # 4-固定解比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_5'].shape[0])}%({stats_to_calculate['df_5'].shape[0]})",  # 5-浮点解比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_6'].shape[0])}%({stats_to_calculate['df_6'].shape[0]})",  # 6-单点比率
+            f"{utils.calc_value(df_expect, stats_to_calculate['df_7'].shape[0])}%({stats_to_calculate['df_7'].shape[0]})",  # 7-单点比率
+            (
+                fixed_available_rate
+                if np.isnan(fixed_available_rate)
+                else f"{fixed_available_rate}%"
+            ),  # 4-固定解可用率
+            mis_seconds,  # 误秒数
+            nmea_missing,  # Integrity of NMEA
+            checksum_fail,
             "",
             file,
             utils.calc_rms(df_distance),
-            (
-                np.nan
-                if is_moving
-                else round(df["std_distance"].std(), Default.KEEP_DECIMAL_DIGIT)
-            ),  # 内符合精度
-            round(
-                stats_describe["df_distance"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_distance"]["max"], Default.KEEP_DECIMAL_DIGIT),
+            stats_describe["df_distance"]["std"],  # 1σ
+            *self._extract_cep(stats_describe["df_distance"]),
             utils.calc_rms(df_hgt_delta),
-            (
-                np.nan
-                if is_moving
-                else round(
-                    stats_describe["df_hgt_delta"]["std"], Default.KEEP_DECIMAL_DIGIT
-                )
-            ),
-            round(
-                stats_describe["df_hgt_delta"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_hgt_delta"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_hgt_delta"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_hgt_delta"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_hgt_delta"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_rms(df_speed),
-            round(stats_describe["df_speed"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_speed"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_speed"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_speed"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_speed"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            "",
-            file,
-            utils.calc_rms(df_distance_3d),
-            round(
-                stats_describe["df_distance_3d"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance_3d"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance_3d"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_distance_3d"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_distance_3d"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            "",
-            file,
-            utils.calc_rms(stats_to_calculate["df_4"]),
-            round(stats_describe["df_4"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_4"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_4"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_4"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_4"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][stats_to_calculate["df_4"] <= 0.025].shape[
-                    0
-                ],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][
-                    (stats_to_calculate["df_4"] > 0.025)
-                    & (stats_to_calculate["df_4"] <= 0.1)
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][
-                    (stats_to_calculate["df_4"] > 0.1)
-                    & (stats_to_calculate["df_4"] <= 0.2)
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][
-                    (stats_to_calculate["df_4"] > 0.2)
-                    & (stats_to_calculate["df_4"] <= 1)
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][
-                    (stats_to_calculate["df_4"] > 1)
-                    & (stats_to_calculate["df_4"] <= 10)
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4"].shape[0],
-                stats_to_calculate["df_4"][(stats_to_calculate["df_4"] > 10)].shape[0],
-            ),
-            utils.calc_rms(stats_to_calculate["df_4_hgt_delta"]),
-            round(
-                stats_describe["df_4_hgt_delta"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_4_hgt_delta"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_4_hgt_delta"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_4_hgt_delta"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_4_hgt_delta"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_value(
-                stats_to_calculate["df_4_hgt_delta"].shape[0],
-                stats_to_calculate["df_4_hgt_delta"][
-                    stats_to_calculate["df_4_hgt_delta"] <= 0.05
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4_hgt_delta"].shape[0],
-                stats_to_calculate["df_4_hgt_delta"][
-                    (stats_to_calculate["df_4_hgt_delta"] > 0.05)
-                    & (stats_to_calculate["df_4_hgt_delta"] <= 0.2)
-                ].shape[0],
-            ),
-            utils.calc_value(
-                stats_to_calculate["df_4_hgt_delta"].shape[0],
-                stats_to_calculate["df_4_hgt_delta"][
-                    stats_to_calculate["df_4_hgt_delta"] > 0.2
-                ].shape[0],
-            ),
-            "",
-            file,
-            utils.calc_rms(stats_to_calculate["df_1"]),
-            round(stats_describe["df_1"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_1"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_1"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_1"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_1"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_rms(stats_to_calculate["df_1_hgt_delta"]),
-            round(
-                stats_describe["df_1_hgt_delta"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_1_hgt_delta"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_1_hgt_delta"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_1_hgt_delta"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_1_hgt_delta"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            "",
-            file,
-            utils.calc_rms(stats_to_calculate["df_5"]),
-            round(stats_describe["df_5"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_5"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_5"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_5"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_5"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_rms(stats_to_calculate["df_5_hgt_delta"]),
-            round(
-                stats_describe["df_5_hgt_delta"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_5_hgt_delta"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_5_hgt_delta"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_5_hgt_delta"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_5_hgt_delta"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            "",
-            file,
-            utils.calc_rms(stats_to_calculate["df_2"]),
-            round(stats_describe["df_2"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_2"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_2"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_2"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT),
-            round(stats_describe["df_2"]["max"], Default.KEEP_DECIMAL_DIGIT),
-            utils.calc_rms(stats_to_calculate["df_2_hgt_delta"]),
-            round(
-                stats_describe["df_2_hgt_delta"][PERCENT_50], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_2_hgt_delta"][PERCENT_68], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_2_hgt_delta"][PERCENT_95], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(
-                stats_describe["df_2_hgt_delta"][PERCENT_99], Default.KEEP_DECIMAL_DIGIT
-            ),
-            round(stats_describe["df_2_hgt_delta"]["max"], Default.KEEP_DECIMAL_DIGIT),
+            stats_describe["df_hgt_delta"]["std"],  # 1σ
+            *self._extract_cep(stats_describe["df_hgt_delta"]),
+            utils.calc_rms(stats_to_calculate["df_speed"]),
+            *self._extract_cep(stats_describe["df_speed"]),
+            utils.calc_rms(stats_to_calculate["df_cog"]),
+            *self._extract_cep(stats_describe["df_cog"]),
         ]
 
+        if self.is_moving:
+            # 如果HeadingAcc–HeadingErr>0, 则符合要求，计算符合要求的点占所有点的多少
+            per_heading = utils.calc_value(
+                (df["p_headingacc"] > df["heading_err"]).sum(),
+                stats_to_calculate["df_heading_err"].shape[0],
+            )
+
+            # 如果 GrdSpdAcc – 2DErr＞0, 则符合要求，计算符合要求的点占所有点的多少
+            per_2d = utils.calc_value(
+                (df["p_grdspdacc"] > df["2d_err"]).sum(),
+                stats_to_calculate["df_2d_err"].shape[0],
+            )
+
+            # 如果SpdAcc - 3DErr＞0, 则符合要求，计算符合要求的点占所有点的多少
+            per_3d = utils.calc_value(
+                (df["p_spdacc"] > df["3d_err"]).sum(),
+                stats_to_calculate["df_3d_err"].shape[0],
+            )
+
+            result_dict[file].extend(
+                [
+                    "",
+                    file,
+                    utils.calc_rms(stats_to_calculate["df_heading_err"]),
+                    stats_describe["df_heading_err"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_heading_err"]),
+                    (f"{per_heading}%" if not np.isnan(per_heading) else per_heading),
+                    utils.calc_rms(stats_to_calculate["df_2d_err"]),
+                    stats_describe["df_2d_err"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_2d_err"]),
+                    (f"{per_2d}%" if not np.isnan(per_2d) else per_2d),
+                    utils.calc_rms(stats_to_calculate["df_3d_err"]),
+                    stats_describe["df_3d_err"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_3d_err"]),
+                    (f"{per_3d}%" if not np.isnan(per_3d) else per_3d),
+                    *self._extract_cep(stats_describe["df_veln_delta"]),
+                    *self._extract_cep(stats_describe["df_vele_delta"]),
+                    *self._extract_cep(stats_describe["df_veld_delta"]),
+                ]
+            )
+        result_dict[file].extend(
+            [
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_pitch_delta"]),
+                stats_describe["df_pitch_delta"]["std"],  # 1σ
+                *self._extract_cep(stats_describe["df_pitch_delta"]),
+                utils.calc_rms(stats_to_calculate["df_roll_delta"]),
+                stats_describe["df_roll_delta"]["std"],  # 1σ
+                *self._extract_cep(stats_describe["df_roll_delta"]),
+                utils.calc_rms(stats_to_calculate["df_heading_delta"]),
+                stats_describe["df_heading_delta"]["std"],  # 1σ
+                *self._extract_cep(stats_describe["df_heading_delta"]),
+            ]
+        )
+
+        if not self.is_moving:
+            result_dict[file].extend(
+                [
+                    utils.calc_rms(stats_to_calculate["df_rms_pitch_delta"]),
+                    stats_describe["df_rms_pitch_delta"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_rms_pitch_delta"]),
+                    utils.calc_rms(stats_to_calculate["df_rms_roll_delta"]),
+                    stats_describe["df_rms_roll_delta"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_rms_roll_delta"]),
+                    utils.calc_rms(stats_to_calculate["df_rms_heading_delta"]),
+                    stats_describe["df_rms_heading_delta"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_rms_heading_delta"]),
+                ]
+            )
+
+        result_dict[file].extend(
+            [
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_1"]),
+                *self._extract_cep(stats_describe["df_1"]),
+                utils.calc_rms(stats_to_calculate["df_1_hgt_delta"]),
+                *self._extract_cep(stats_describe["df_1_hgt_delta"]),
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_2"]),
+                *self._extract_cep(stats_describe["df_2"]),
+                utils.calc_rms(stats_to_calculate["df_2_hgt_delta"]),
+                *self._extract_cep(stats_describe["df_2_hgt_delta"]),
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_4"]),
+                *self._extract_cep(stats_describe["df_4"]),
+                utils.calc_rms(stats_to_calculate["df_4_hgt_delta"]),
+                *self._extract_cep(stats_describe["df_4_hgt_delta"]),
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_5"]),
+                *self._extract_cep(stats_describe["df_5"]),
+                utils.calc_rms(stats_to_calculate["df_5_hgt_delta"]),
+                *self._extract_cep(stats_describe["df_5_hgt_delta"]),
+                "",
+                file,
+                utils.calc_rms(stats_to_calculate["df_6"]),
+                *self._extract_cep(stats_describe["df_6"]),
+                utils.calc_rms(stats_to_calculate["df_6_hgt_delta"]),
+                *self._extract_cep(stats_describe["df_6_hgt_delta"]),
+            ]
+        )
+
+    def _get_filtered_index(self):
+        """构建 index 列表，动态模式移除 "From RMS" 条目及空分隔符，同时去除 " From AVG" 后缀。"""
+        _index = [x.format(self.top_n) if "{}" in x else x for x in position_index_list]
+        if self.is_moving:
+            _index = [
+                x
+                for i, x in enumerate(_index)
+                if "From RMS" not in x
+                and not (
+                    x == "" and i + 1 < len(_index) and "From RMS" in _index[i + 1]
+                )
+            ]
+            _index = [x.replace(" From AVG", "") for x in _index]
+        else:
+            try:
+                pq_idx = _index.index("PQTMVEL Result:")
+                start = pq_idx - 1  # include preceding blank
+                end = pq_idx + 1
+                while end < len(_index) and _index[end] != "":
+                    end += 1
+                _index = _index[:start] + _index[end:]  # keep trailing blank
+            except ValueError:
+                pass
+        return _index
+
     def _gen_nan_result(self, result_dict, file):
-        result_dict[file] = [np.nan] * len(position_index_list)
+        result_dict[file] = [np.nan] * len(self._get_filtered_index())
 
     def gen_split_report(self):
         for scene in self.scenes:
@@ -1146,6 +1452,9 @@ class PositionProcessor(PositionAttr):
             data_path.mkdir(parents=True, exist_ok=True)
 
             for file, data in self.df_datas.items():
+                if "calc" not in data:
+                    continue
+
                 df = data["calc"]
                 freq = data["freq"]
                 df_scene = df[(df.index >= begin_time) & (df.index <= end_time)]
@@ -1162,7 +1471,7 @@ class PositionProcessor(PositionAttr):
                     label="distance",
                 )
                 self._gen_result(
-                    result_dict, file[:-4], df_scene, freq, df_expect, df_valid, True
+                    result_dict, file[:-4], df_scene, freq, df_expect, df_valid
                 )
 
             self._gen_report(
@@ -1175,51 +1484,61 @@ class PositionProcessor(PositionAttr):
             )
 
 
-class PositionUIProcessor(QThread):
-    log_signal = Signal(str)
-    end_signal = Signal()
+try:
+    from PySide6.QtCore import QThread, Signal
 
-    def __init__(self):
-        QThread.__init__(self)
-        self.processor = PositionProcessor()
+    class PositionUIProcessor(QThread):
+        log_signal = Signal(str)
+        end_signal = Signal()
 
-    def check_file(self):
-        if isinstance(self.processor.point, str) and not os.path.exists(
-            self.processor.point
-        ):
-            self.log_signal.emit(f"<font color='red'>参考文件不存在</font>")
-            return False
+        def __init__(self):
+            QThread.__init__(self)
+            self.processor = PositionProcessor()
 
-        check_list = [
-            check_file.text() if isinstance(check_file, QCheckBox) else check_file
-            for check_file in self.processor.check_list
-        ]
-
-        for file in check_list:
-            if not os.path.exists(os.path.join(self.processor.filepath, file)):
-                self.log_signal.emit(f"<font color='red'>{file}文件不存在</font>")
+        def check_file(self):
+            if isinstance(self.processor.point, str) and not os.path.exists(
+                self.processor.point
+            ):
+                self.log_signal.emit(f"<font color='red'>参考文件不存在</font>")
                 return False
 
-        return True
+            check_list = [
+                (
+                    check_file.text()  # type: ignore[union-attr]
+                    if callable(getattr(check_file, "text", None))
+                    else check_file
+                )
+                for check_file in self.processor.check_list
+            ]
 
-    def run(self):
-        if not self.check_file():
+            for file in check_list:
+                if not os.path.exists(os.path.join(self.processor.filepath, file)):
+                    self.log_signal.emit(f"<font color='red'>{file}文件不存在</font>")
+                    return False
+
+            return True
+
+        def run(self):
+            if not self.check_file():
+                self.end_signal.emit()
+                return
+
+            self.processor.create()
+            self.processor.callback = self.log_signal.emit
+
+            if self.processor.is_moving:
+                self.processor.process_moving_data(
+                    is_ttff=self.processor.is_ttff,
+                )
+            else:
+                self.processor.process_static_data(
+                    std_mode=self.processor.std_mode,
+                    is_ttff=self.processor.is_ttff,
+                )
             self.end_signal.emit()
-            return
 
-        self.processor.create()
-        self.processor.callback = self.log_signal.emit
-
-        if self.processor.is_moving:
-            self.processor.process_moving_data(
-                is_ttff=self.processor.is_ttff,
-            )
-        else:
-            self.processor.process_static_data(
-                std_mode=self.processor.std_mode,
-                is_ttff=self.processor.is_ttff,
-            )
-        self.end_signal.emit()
+except ImportError:
+    pass
 
 
 class PositionWebProcessor:

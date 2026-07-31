@@ -22,7 +22,7 @@ class GSVParser(NMEAParser):
     def __init__(self, *args, **kwargs):
         super(GSVParser, self).__init__(*args, chars=NMEAHeader.GSV, **kwargs)
 
-    def decode_gsv(self):
+    def decode_gsv(self, elev, threshold):
         logger.debug(f"decode line: {self.line.strip()}")
 
         if not self.check_sum():
@@ -63,12 +63,14 @@ class GSVParser(NMEAParser):
 
         while i < length:
             try:
+                elev_value = float(gsv_data[i + 1])
                 cn0_value = float(gsv_data[i + 3])
-                if cn0_value == 0.0:
-                    raise ValueError  # 剔除CN0为0的值
+                if cn0_value == 0.0 or cn0_value < threshold:
+                    raise ValueError  # 剔除CN0为0或低于阈值的值
+                if elev_value < elev:
+                    raise ValueError  # 剔除仰角低于阈值的值
                 freq_list.append(cn0_value)
             except ValueError:
-                # freq_list.append(np.nan)
                 ...
             i += 4
         logger.debug(f"{line_split[0]}, {freq_label}, {result[freq_label]}")

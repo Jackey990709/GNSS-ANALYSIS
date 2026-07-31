@@ -69,7 +69,9 @@ class LocalPath:
     ASSETS_PATH = Path(TEMPLATE_PATH, "assets")
     CUSTOMER_PATH = Path(TEMPLATE_PATH, "customer")
     C_INDEX_FILE = Path(TEMPLATE_PATH, "cIndex.html")
-    REPORT_JSON = Path(os.getcwd(), "REPORT-UTC.json")
+    STATIC_TEMPLATE = Path(TEMPLATE_PATH, "Static_Report.xlsx")
+    DYNAMIC_TEMPLATE = Path(TEMPLATE_PATH, "Dynamic_Report.xlsx")
+    # REPORT_JSON = Path(os.getcwd(), "REPORT-UTC.json")
 
 
 class TTFFSignal(enum.Enum):
@@ -81,3 +83,5 @@ class File:
     ORIGINAL_FILE_EXT = ".ori.csv"
     CALC_FILE_EXT = ".cal.csv"
     EXT_FILE = ".csv"
+
+    JSON_NAME = "REPORT-UTC.json"
