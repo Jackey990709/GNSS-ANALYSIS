@@ -531,8 +531,7 @@ class PositionProcessor(PositionAttr):
         df["rms_roll_delta"] = angle_diff(df["roll_delta"], rms_roll).round(5)
         df["rms_heading_delta"] = angle_diff(df["heading_delta"], rms_heading).round(5)
         df["mis_seconds"] = (
-            df.index.to_series().diff().dt.total_seconds().fillna(np.nan).round(3)
-            * freq
+            df.index.to_series().diff().dt.total_seconds().fillna(np.nan) * freq
         )
         # df_utc_time["utc_date_time"].diff().dt.total_seconds() * 1000
 
@@ -1213,7 +1212,8 @@ class PositionProcessor(PositionAttr):
 
         if not self.is_moving:
             df_misseconds = df["mis_seconds"].dropna()
-            mis_seconds = (df_misseconds != 1.0).sum()
+            # 统计 mis-seconds 含小数个数
+            mis_seconds = (df_misseconds % 1.0 != 0).sum()
         else:
             mis_seconds = np.nan
 
