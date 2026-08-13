@@ -15,6 +15,7 @@ VA = "Altitude Accuracy"
 
 # cep_keys = ["50%", "68%", "95%", "99%"]
 # percentiles = [0.50, 0.68, 0.95, 0.99]
+# cep_list = ["CEP50", "CEP68", "CEP95", "CEP99", "Max"]
 cep_keys = ["50%", "68%", "95%", "99%", "99.7%"]
 percentiles = [0.50, 0.68, 0.95, 0.99, 0.997]
 cep_list = ["CEP50", "CEP68", "CEP95", "CEP99", "CEP99.7", "Max"]

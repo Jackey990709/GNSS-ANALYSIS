@@ -1,5 +1,48 @@
 from .func import *
 
+POSITION_DICT_KEYS = [
+    "utc_date_time",
+    "gga_time",
+    "label",
+    "satellites",
+    "lat",
+    "lng",
+    "alt",
+    "sep",
+    "hgt",
+    "delay",
+    "pdop",
+    "hdop",
+    "vdop",
+    "speed",
+    # "cog",
+    # "knot",
+    # "kmph",
+    # "header",
+    "yaw",
+    "status",
+    "pitch",
+    "roll",
+    "heading",
+    # "l1_count",
+    # "l2_count",
+    # "l5_count",
+    "top_cn0",
+    "checksum",
+]
+
+POSITION_MOVING_DICT_KEYS = [
+    "p_veln",
+    "p_vele",
+    "p_veld",
+    "p_grdspd",
+    "p_spd",
+    "p_heading",
+    "p_grdspdacc",
+    "p_spdacc",
+    "p_headingacc",
+]
+
 EXPORT_COLUMNS = [
     "label",
     "lat",
@@ -128,6 +171,8 @@ __all__ = [
     "get_expect_valid_value",
     "write_to_file",
     "angle_diff",
+    "POSITION_DICT_KEYS",
+    "POSITION_MOVING_DICT_KEYS",
     "EXPORT_COLUMNS",
     "REF_COLUMNS",
     "RENAME_COLUMNS",

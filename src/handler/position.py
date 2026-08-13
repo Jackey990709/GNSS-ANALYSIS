@@ -205,52 +205,11 @@ class PositionProcessor(PositionAttr):
 
             return
 
-        self.position_dict = {
-            "utc_date_time": [],
-            "gga_time": [],
-            "label": [],
-            "satellites": [],
-            "lat": [],
-            "lng": [],
-            "alt": [],
-            "sep": [],
-            "hgt": [],
-            "delay": [],
-            "pdop": [],
-            "hdop": [],
-            "vdop": [],
-            "speed": [],
-            # "cog": [],
-            # "knot": [],
-            # "kmph": [],
-            # "header": [],
-            "yaw": [],
-            "status": [],
-            "pitch": [],
-            "roll": [],
-            "heading": [],
-            # "l1_count": [],
-            # "l2_count": [],
-            # "l5_count": [],
-            "top_cn0": [],
-            "checksum": [],
-        }
+        self.position_dict = {k: [] for k in POSITION_DICT_KEYS}
 
         if self.is_moving:
             # 动态增加PQTMVEL解析
-            self.position_dict.update(
-                {
-                    "p_veln": [],
-                    "p_vele": [],
-                    "p_veld": [],
-                    "p_grdspd": [],
-                    "p_spd": [],
-                    "p_heading": [],
-                    "p_grdspdacc": [],
-                    "p_spdacc": [],
-                    "p_headingacc": [],
-                }
-            )
+            self.position_dict.update({k: [] for k in POSITION_MOVING_DICT_KEYS})
 
         for sat_sys, freq in sat_freq_combinations:
             if (used_label := f"{sat_sys}_used") not in self.position_dict:
