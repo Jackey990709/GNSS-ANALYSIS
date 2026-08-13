@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from pathlib import Path
 
 
-from src import VERSION, title
+from src import CLIENT_VERSION, title
 from src.libs.parser import write_yml
 from src.util.const import File
 from src.util.msg import DialogMessage, Message
@@ -38,7 +38,7 @@ class MainView(Ui_MainView, QMainWindow):
         QApplication.setStyle("Fusion")
 
         self.setWindowIcon(QIcon(rf".//res//images//icon.ico"))
-        self.setWindowTitle(f"GNSSAnalysis{title}-{VERSION}")
+        self.setWindowTitle(f"GNSSAnalysis{title}-{CLIENT_VERSION}")
 
         self.filepath: str = ""
         self.temp_filepath: str = ""
