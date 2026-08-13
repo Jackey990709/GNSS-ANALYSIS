@@ -103,7 +103,7 @@ def _filter_empty_sections(
     # ── 1. Px Accuracy 段 ──────────────────────────────────────────
     for i, label in enumerate(_index):
         if label == "" and i + 1 < len(_index) and _index[i + 1].endswith(" Accuracy:"):
-            data_end = min(i + 14, len(_index))
+            data_end = _find_next_blank(i + 2)
             _remove_section(keep_mask, slice(i + 2, data_end), i)
 
     # ── 2. PQTMVEL 段 ─────────────────────────────────────────────
@@ -896,9 +896,12 @@ class PositionProcessor(PositionAttr):
                         self.position_dict["p_headingacc"][-1] = parser.headingacc
 
         # 记录最后一个历元的checksum fail次数
-        self.position_dict["checksum"][-1] = _NMEABase.total_failed - prev_total_failed
+        if self.position_dict["checksum"]:
+            self.position_dict["checksum"][-1] = (
+                _NMEABase.total_failed - prev_total_failed
+            )
         # 累加最后一个历元的NMEA缺失句子数
-        _NMEABase.total_missing += len(epoch_missing)
+        # _NMEABase.total_missing += len(epoch_missing)
         print_error_info(error_dict, callback)
 
     def _check_rmc_first(self, file_path: str) -> bool:
