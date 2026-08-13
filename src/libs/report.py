@@ -553,7 +553,7 @@ class Report:
                 _fill(ws, col, row, df, label, fname, percentage=True)
 
             # Fixed availability (row 38)
-            _fill(ws, col, 38, df, "Fixed availability", fname)
+            _fill(ws, col, 38, df, "Fixed availability", fname, percentage=True)
 
         # 所有 DUT 数据列等宽；宽度取 Sample 与 Constellation 中最长的内容并留出边距。
         if n_dut > 0:
@@ -752,7 +752,9 @@ class Report:
 
         self._write_dynamic_section(ws, section_start, TEMPLATE_ROW, template_fills)
 
-    def _write_dynamic_section(self, ws, section_start: int, template_row: int, template_fills: dict):
+    def _write_dynamic_section(
+        self, ws, section_start: int, template_row: int, template_fills: dict
+    ):
         """将一个 section 的 DUT 数据写入工作表的指定起始行。"""
         scene_name = self.sheet_name
         df = self.df_result
@@ -811,7 +813,7 @@ class Report:
                 _fill(ws, col_letter, row, df, label, fname, percentage=True)
 
             # J: Fixed availability
-            _fill(ws, "J", row, df, "Fixed availability", fname)
+            _fill(ws, "J", row, df, "Fixed availability", fname, percentage=True)
 
             # K-O: Horizontal CEP
             for col_letter, label in (

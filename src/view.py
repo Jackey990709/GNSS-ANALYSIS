@@ -123,7 +123,7 @@ class MainView(Ui_MainView, QMainWindow):
             self,
             DialogMessage.SELECTED_FILE,
             self.filepath,
-            "Log Files (*.log | *.txt)",
+            "Log Files (*)",
         )[0]
 
         if filepath:
