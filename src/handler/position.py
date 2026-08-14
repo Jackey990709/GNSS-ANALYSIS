@@ -1314,12 +1314,12 @@ class PositionProcessor(PositionAttr):
             [
                 "",
                 file,
-                utils.calc_rms(stats_to_calculate["df_pitch_delta"]),
-                stats_describe["df_pitch_delta"]["std"],  # 1σ
-                *self._extract_cep(stats_describe["df_pitch_delta"]),
                 utils.calc_rms(stats_to_calculate["df_roll_delta"]),
                 stats_describe["df_roll_delta"]["std"],  # 1σ
                 *self._extract_cep(stats_describe["df_roll_delta"]),
+                utils.calc_rms(stats_to_calculate["df_pitch_delta"]),
+                stats_describe["df_pitch_delta"]["std"],  # 1σ
+                *self._extract_cep(stats_describe["df_pitch_delta"]),
                 utils.calc_rms(stats_to_calculate["df_heading_delta"]),
                 stats_describe["df_heading_delta"]["std"],  # 1σ
                 *self._extract_cep(stats_describe["df_heading_delta"]),
@@ -1329,12 +1329,12 @@ class PositionProcessor(PositionAttr):
         if not self.is_moving:
             result_dict[file].extend(
                 [
-                    utils.calc_rms(stats_to_calculate["df_rms_pitch_delta"]),
-                    stats_describe["df_rms_pitch_delta"]["std"],  # 1σ
-                    *self._extract_cep(stats_describe["df_rms_pitch_delta"]),
                     utils.calc_rms(stats_to_calculate["df_rms_roll_delta"]),
                     stats_describe["df_rms_roll_delta"]["std"],  # 1σ
                     *self._extract_cep(stats_describe["df_rms_roll_delta"]),
+                    utils.calc_rms(stats_to_calculate["df_rms_pitch_delta"]),
+                    stats_describe["df_rms_pitch_delta"]["std"],  # 1σ
+                    *self._extract_cep(stats_describe["df_rms_pitch_delta"]),
                     utils.calc_rms(stats_to_calculate["df_rms_heading_delta"]),
                     stats_describe["df_rms_heading_delta"]["std"],  # 1σ
                     *self._extract_cep(stats_describe["df_rms_heading_delta"]),
