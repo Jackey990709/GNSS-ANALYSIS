@@ -1273,20 +1273,20 @@ class PositionProcessor(PositionAttr):
         if self.is_moving:
             # 如果HeadingAcc–HeadingErr>0, 则符合要求，计算符合要求的点占所有点的多少
             per_heading = utils.calc_value(
-                (df["p_headingacc"] > df["heading_err"]).sum(),
                 stats_to_calculate["df_heading_err"].shape[0],
+                (df["p_headingacc"] > df["heading_err"]).sum(),
             )
 
             # 如果 GrdSpdAcc – 2DErr＞0, 则符合要求，计算符合要求的点占所有点的多少
             per_2d = utils.calc_value(
-                (df["p_grdspdacc"] > df["2d_err"]).sum(),
                 stats_to_calculate["df_2d_err"].shape[0],
+                (df["p_grdspdacc"] > df["2d_err"]).sum(),
             )
 
             # 如果SpdAcc - 3DErr＞0, 则符合要求，计算符合要求的点占所有点的多少
             per_3d = utils.calc_value(
-                (df["p_spdacc"] > df["3d_err"]).sum(),
                 stats_to_calculate["df_3d_err"].shape[0],
+                (df["p_spdacc"] > df["3d_err"]).sum(),
             )
 
             result_dict[file].extend(
