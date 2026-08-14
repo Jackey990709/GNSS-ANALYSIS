@@ -97,7 +97,7 @@ def get_expect_valid_value(
     except IndexError:
         ...
 
-    return df_expect, df[label].dropna().size
+    return int(df_expect), df[label].dropna().size
 
 
 def write_to_file(df: pd.DataFrame, result_path: str, filename, index=True):

@@ -36,6 +36,10 @@ def get_freq(utc_date_time, interval=1e6):
                 Counter(diff[diff > 0.0]).most_common(1)[0][0],
                 Default.KEEP_DECIMAL_DIGIT,
             )
+
+            if delta == 0.067:
+                return 15
+
             return int(1 / delta)
         except (IndexError, OverflowError):
             pass

@@ -1211,9 +1211,16 @@ class PositionProcessor(PositionAttr):
         )
 
         if not self.is_moving:
-            df_misseconds = df["mis_seconds"].dropna()
-            # 统计 mis-seconds 含小数个数
-            mis_seconds = (df_misseconds % 1.0 != 0).sum()
+            if freq == 15:
+                df_misseconds = df["mis_seconds"].dropna().round(3)
+                # 统计非正常间隔(非1.005/0.93)的误秒个数
+                mis_seconds = (
+                    (df_misseconds != 1.005) & (df_misseconds != 0.93)
+                ).sum()
+            else:
+                df_misseconds = df["mis_seconds"].dropna()
+                # 统计 mis-seconds 含小数个数
+                mis_seconds = (df_misseconds % 1.0 != 0).sum()
         else:
             mis_seconds = np.nan
 
