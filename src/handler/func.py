@@ -30,21 +30,21 @@ def print_error_info(error_dict: dict, callback):
         callback(f'<font color="red">检测到{err}异常</font>')
 
 
-def handle_log_info(log_info: str, temp_log_info: str, df: pd.DataFrame) -> str:
+def handle_duplicate_data(df: pd.Series, log_path: str, file: str = ""):
     if df is None:
-        log_info += f"{temp_log_info}<br>"
-    else:
-        if not df.empty:
-            log_info += f"{temp_log_info}<br>"
-            if isinstance(df, pd.Series):
-                for e in df:
-                    log_info += f"{e}<br>"
+        return
 
-            if isinstance(df, pd.DataFrame):
-                for e in df.iterrows():
-                    log_info += f"{e}<br>"
-            log_info += f"<br>"
-    return log_info
+    if not df.empty:
+        with open(
+            os.path.join(log_path, "duplicate_data_utc_time.txt"),
+            "a",
+            encoding="utf-8",
+            errors="ignore",
+        ) as f:
+            f.write(f"{file}:\n")
+            for e in df:
+                f.write(f"{e}\n")
+            f.write("--------------------------------------------\n")
 
 
 def get_duplicate_e_info(df, e="utc_date_time"):
@@ -56,12 +56,16 @@ def get_duplicate_e_info(df, e="utc_date_time"):
 
 
 def format_pd(
-    df: pd.DataFrame, log_info: str = "", label: str = "ksxt", handle_log=True
+    df: pd.DataFrame,
+    log_info: str = "",
+    label: str = "ksxt",
+    log_path: str = "",
+    file: str = "",
 ):
     df.dropna(subset=["utc_date_time"], inplace=True)
-    # df_log = get_duplicate_e_info(df)
-    # if handle_log:
-    #     log_info = handle_log_info(log_info, f"{label}语句重复输出:", df_log)
+    df_duplicate = get_duplicate_e_info(df)
+    if log_path:
+        handle_duplicate_data(df_duplicate, log_path, file)
 
     df = df.drop_duplicates(subset=["utc_date_time"], keep="first")
     df.reset_index(inplace=True)  # 重置索引，解决丢数/重复数据导致的索引不连续

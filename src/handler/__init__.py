@@ -166,7 +166,7 @@ __all__ = [
     "nav_log_info",
     "update_error_dict",
     "print_error_info",
-    "handle_log_info",
+    "handle_duplicate_data",
     "get_duplicate_e_info",
     "format_pd",
     "get_expect_valid_value",

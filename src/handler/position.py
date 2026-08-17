@@ -1038,7 +1038,11 @@ class PositionProcessor(PositionAttr):
         fix_total = df.shape[0]
 
         df, freq, log_info, first_valid_index, _ = format_pd(
-            df, log_info=log_info, label="rmc"
+            df,
+            log_info=log_info,
+            label="rmc",
+            log_path=os.path.join(self.filepath, "report"),
+            file=file,
         )
 
         fix_expect, fix_valid = get_expect_valid_value(
