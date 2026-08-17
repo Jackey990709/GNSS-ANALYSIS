@@ -681,8 +681,8 @@ class PositionProcessor(PositionAttr):
             required_sentence = {
                 NMEAHeaderByte.RMC_BYTE.decode(),
                 NMEAHeaderByte.GGA_BYTE.decode(),
-                NMEAHeaderByte.VTG_BYTE.decode(),
-                NMEAHeaderByte.GLL_BYTE.decode(),
+                # NMEAHeaderByte.VTG_BYTE.decode(),
+                # NMEAHeaderByte.GLL_BYTE.decode(),
             }
 
         # 确定主要处理的数据类型
