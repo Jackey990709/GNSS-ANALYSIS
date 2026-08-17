@@ -417,6 +417,13 @@ class Report:
             description="<p>统计浮点解水平/高程误差</p>",
             test_datas=self.__dict__.pop("_float_precision", {}),
         )
+
+        self._gen_task(
+            chart_tempate,
+            "pqtmvel_trend.html",
+            title="PQTMVEL Trend",
+            test_datas=self.__dict__.pop("_pqtmvel", {}),
+        )
         if self.is_moving:
             self._gen_task(
                 chart_double_y_tempate,
@@ -938,6 +945,7 @@ class Report:
         irnss_dict: dict[str, Any] = {}
         svs_used_dict: dict[str, Any] = {}
         float_precision_dict: dict[str, Any] = {}
+        pqtmvel_dict: dict[str, Any] = {}
 
         for file in self.check_list:
             file = os.path.splitext(file)[0]
@@ -1292,6 +1300,17 @@ class Report:
                             .to_list(),
                         },
                     ]
+                    df_pqtmvel = df[["heading_err", "2d_err", "3d_err"]].fillna(
+                        DEFAULT_NULL_VALUE
+                    )
+                    pqtmvel_dict[file] = [
+                        _format_index(df_pqtmvel),
+                        {
+                            "heading_err": df_pqtmvel["heading_err"].to_list(),
+                            "2d_err": df_pqtmvel["2d_err"].to_list(),
+                            "3d_err": df_pqtmvel["3d_err"].to_list(),
+                        },
+                    ]
                 else:
                     df_distance = df[["label", "distance", "hgt_delta"]]
                     df_4_distance = df.loc[
@@ -1332,6 +1351,10 @@ class Report:
                             .to_list(),
                         },
                     ]
+                    pqtmvel_dict[file] = [
+                        [],
+                        {"heading_err": [], "2d_err": [], "3d_err": []},
+                    ]
             except FileNotFoundError:
                 speed_dict[file] = [[], []]
                 precision_dict[file] = [[], []]
@@ -1340,6 +1363,7 @@ class Report:
                 gps_l1_v[file] = [[], []]
                 cog_dict[file] = [[], []]
                 float_precision_dict[file] = [[], []]
+                pqtmvel_dict[file] = [[], []]
 
         self.__dict__.update(
             {
@@ -1363,6 +1387,7 @@ class Report:
                 "_irnss": irnss_dict,
                 "_svs_used": svs_used_dict,
                 "_float_precision": float_precision_dict,
+                "_pqtmvel": pqtmvel_dict,
             }
         )
 

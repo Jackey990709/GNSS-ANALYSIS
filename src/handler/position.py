@@ -400,7 +400,7 @@ class PositionProcessor(PositionAttr):
                     df[
                         REF_COLUMNS
                         + EXPORT_COLUMNS
-                        + ["veld_delta", "veln_delta", "vele_delta"]
+                        + ["heading_err", "2d_err", "3d_err"]
                     ],
                     self.data_path,
                     f"{file[:-4]}{File.CALC_FILE_EXT}",
