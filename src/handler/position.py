@@ -518,18 +518,27 @@ class PositionProcessor(PositionAttr):
 
         pitch_mean = df["pitch"].mean()
         roll_mean = df["roll"].mean()
-        heading_mean = df["heading"].mean()
+        # 计算航向平均值，航向平均值需要考虑角度的环绕问题，使用向量平均法计算
+        heading_mean = (
+            np.degrees(
+                np.arctan2(
+                    np.nanmean(np.sin(np.radians(df["heading"]))),
+                    np.nanmean(np.cos(np.radians(df["heading"]))),
+                )
+            )
+            % 360
+        )
         df["pitch_delta"] = abs(df["pitch"] - pitch_mean).round(5)
         df["roll_delta"] = angle_diff(df["roll"], roll_mean).round(5)
         df["heading_delta"] = angle_diff(df["heading"], heading_mean).round(5)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "Mean of empty slice")
-            rms_pitch = np.sqrt(np.nanmean(df["pitch_delta"] ** 2))
-            rms_roll = np.sqrt(np.nanmean(df["roll_delta"] ** 2))
-            rms_heading = np.sqrt(np.nanmean(df["heading_delta"] ** 2))
-        df["rms_pitch_delta"] = abs(df["pitch_delta"] - rms_pitch).round(5)
-        df["rms_roll_delta"] = angle_diff(df["roll_delta"], rms_roll).round(5)
-        df["rms_heading_delta"] = angle_diff(df["heading_delta"], rms_heading).round(5)
+            rms_pitch = np.sqrt(np.nanmean(df["pitch"] ** 2))
+            rms_roll = np.sqrt(np.nanmean(df["roll"] ** 2))
+            rms_heading = np.sqrt(np.nanmean(df["heading"] ** 2))
+        df["rms_pitch_delta"] = abs(df["pitch"] - rms_pitch).round(5)
+        df["rms_roll_delta"] = angle_diff(df["roll"], rms_roll).round(5)
+        df["rms_heading_delta"] = angle_diff(df["heading"], rms_heading).round(5)
         df["mis_seconds"] = (
             df.index.to_series().diff().dt.total_seconds().fillna(np.nan) * freq
         )
