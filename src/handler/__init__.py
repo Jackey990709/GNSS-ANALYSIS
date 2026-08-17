@@ -23,6 +23,7 @@ POSITION_DICT_KEYS = [
     "status",
     "pitch",
     "roll",
+    "h_status",  # heading status
     "heading",
     # "l1_count",
     # "l2_count",
@@ -94,7 +95,7 @@ DROP_COLUMNS = [
     "total_cn0",
     "avg_cn0",
     "top_cn0",
-    "status",
+    "h_status",
     "week",
     "gpstime",
     # "header",

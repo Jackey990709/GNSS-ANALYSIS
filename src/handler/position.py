@@ -869,7 +869,7 @@ class PositionProcessor(PositionAttr):
                     elif NMEAHeaderByte.PQTMTAR_BYTE in line:
                         err_code, decode_line = utils.decode_line(line)
                         parser = PQTMTARParser(decode_line, error_code=err_code)
-                        self.position_dict["status"][-1] = parser.status
+                        self.position_dict["h_status"][-1] = parser.status
                         self.position_dict["pitch"][-1] = parser.pitch
                         self.position_dict["roll"][-1] = parser.roll
                         self.position_dict["heading"][-1] = parser.heading
@@ -1231,6 +1231,10 @@ class PositionProcessor(PositionAttr):
         else:
             mis_seconds = np.nan
 
+        heading_0_size = df[df["h_status"] == "0"].shape[0]
+        heading_4_size = df[df["h_status"] == "4"].shape[0]
+        heading_5_size = df[df["h_status"] == "5"].shape[0]
+
         result_dict[file] = [
             _format_date_time(df.index[0]),
             _format_date_time(df.index[-1]),
@@ -1267,6 +1271,9 @@ class PositionProcessor(PositionAttr):
                 if np.isnan(fixed_available_rate)
                 else f"{fixed_available_rate}%"
             ),  # 4-固定解可用率
+            f"{utils.calc_value(df_expect, heading_0_size)}%({heading_0_size})",  # "0-Heading rate"
+            f"{utils.calc_value(df_expect, heading_4_size)}%({heading_4_size})",  # "4-Heading rate"
+            f"{utils.calc_value(df_expect, heading_5_size)}%({heading_5_size})",  # "5-Heading rate"
             mis_seconds,  # 误秒数
             nmea_missing,  # Integrity of NMEA
             checksum_fail,
