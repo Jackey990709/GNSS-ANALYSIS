@@ -576,7 +576,7 @@ class PositionProcessor(PositionAttr):
 
         # 计算PQTMVEL数据
         # | PQTMVEL <Heading> - POS <Heading> | = HeadingErr
-        df["heading_err"] = abs(df["p_heading"] - df["ref_heading"]).round(5)
+        df["heading_err"] = angle_diff(df["p_heading"], df["ref_heading"]).round(5)
 
         # | <GrdSpd>–√(〖<Vel-N>〗^2+〖<Vel-E>〗^2 )| = 2DErr
         df["2d_err"] = abs(
@@ -1223,9 +1223,7 @@ class PositionProcessor(PositionAttr):
             if freq == 15:
                 df_misseconds = df["mis_seconds"].dropna().round(3)
                 # 统计非正常间隔(非1.005/0.93)的误秒个数
-                mis_seconds = (
-                    (df_misseconds != 1.005) & (df_misseconds != 0.93)
-                ).sum()
+                mis_seconds = ((df_misseconds != 1.005) & (df_misseconds != 0.93)).sum()
             else:
                 df_misseconds = df["mis_seconds"].dropna()
                 # 统计 mis-seconds 含小数个数
