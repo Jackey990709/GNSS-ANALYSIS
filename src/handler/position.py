@@ -169,6 +169,11 @@ class PositionAttr:
 
         self.stop_event: Optional[Event] = None
         self._is_pos320 = False
+        self.is_long_test = False  # 标记是否为长时间测试，影响报告生成逻辑
+
+        # {file: [...51列]} 存储 long test 报告每文件数据
+        self.long_test_data: dict[str, Union[list, str]] = {}
+        self.remark = ""  # long test 报告备注信息
 
     def create(self):
         if not self.filepath:
@@ -518,16 +523,18 @@ class PositionProcessor(PositionAttr):
 
         pitch_mean = df["pitch"].mean()
         roll_mean = df["roll"].mean()
-        # 计算航向平均值，航向平均值需要考虑角度的环绕问题，使用向量平均法计算
-        heading_mean = (
-            np.degrees(
-                np.arctan2(
-                    np.nanmean(np.sin(np.radians(df["heading"]))),
-                    np.nanmean(np.cos(np.radians(df["heading"]))),
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "Mean of empty slice")
+            # 计算航向平均值，航向平均值需要考虑角度的环绕问题，使用向量平均法计算
+            heading_mean = (
+                np.degrees(
+                    np.arctan2(
+                        np.nanmean(np.sin(np.radians(df["heading"]))),
+                        np.nanmean(np.cos(np.radians(df["heading"]))),
+                    )
                 )
+                % 360
             )
-            % 360
-        )
         df["pitch_delta"] = abs(df["pitch"] - pitch_mean).round(5)
         df["roll_delta"] = angle_diff(df["roll"], roll_mean).round(5)
         df["heading_delta"] = angle_diff(df["heading"], heading_mean).round(5)
@@ -1135,6 +1142,8 @@ class PositionProcessor(PositionAttr):
                 begin_time=begin_time,
                 end_time=end_time,
                 sheet_name=sheet_name,
+                is_long_test=self.is_long_test if begin_time is None else False,
+                long_test_data=self.long_test_data if begin_time is None else None,
             )
             report.gen_precision_report()
 
@@ -1153,6 +1162,7 @@ class PositionProcessor(PositionAttr):
         df_valid,
         checksum_fail=np.nan,
         nmea_missing=np.nan,
+        collect_long: bool = True,
     ):
         mask = df["label"] != "0"
         if self.is_moving:
@@ -1401,6 +1411,104 @@ class PositionProcessor(PositionAttr):
             ]
         )
 
+        if self.is_long_test and collect_long:
+            # 直接生成 long_time_report.html 模板 Report-1 的一行（51 列），避免二次解析
+            def _lt_fmt(value):
+                """NaN/None -> '-'; 数值 round 4 位。"""
+                if value is None:
+                    return "-"
+                try:
+                    if pd.isna(value):
+                        return "-"
+                except (TypeError, ValueError):
+                    pass
+                if isinstance(value, float):
+                    return str(round(value, 4))
+                return str(value)
+
+            def get_loc_frozen(loc: pd.DataFrame) -> str:
+                """检查经纬度是否冻结（连续2h经纬度都无变化）。"""
+                same = loc.eq(loc.shift()).all(axis=1).to_numpy()
+                starts = np.flatnonzero(~same)
+                ends = np.append(starts[1:] - 1, len(df) - 1)
+                timestamps = pd.DatetimeIndex(df.index)
+                durations = timestamps[ends] - timestamps[starts]
+
+                return "Fail" if (durations >= pd.Timedelta(hours=2)).any() else "Pass"
+
+            cn0_order = [
+                "gps_l1",
+                "gps_l5",
+                "gps_l2",  # GP_1, GP_8, GP_6
+                "glo_g1",
+                "glo_g2",  # GL_1, GL_3
+                "gal_e1",
+                "gal_e5a",
+                "gal_e5b",
+                "gal_e6",  # GA_7, GA_1, GA_2, GA_5
+                "bds_b1i",
+                "bds_b1c",
+                "bds_b2i",
+                "bds_b2a",
+                "bds_b2b",
+                "bds_b3i",  # GB_1, GB_3, GB_B, GB_5, GB_6, GB_8
+                "qzs_q1",
+                "qzs_q5",  # GQ_1, GQ_8
+                "irn_i5",  # GI_1
+            ]
+            sat_order = ["gps", "glo", "gal", "bds", "qzs", "irn"]
+            # CEP100 取 Max
+            cep_values = ["50%", "68%", "95%", "99%", "max"]
+            # 卫星数（保留1位小数，NaN显示"-"）、CN0（0置"-"）
+            satellites = [
+                (
+                    _lt_fmt(round(float(df[f"{s}_used"].mean()), 1))
+                    if f"{s}_used" in df.columns
+                    else "-"
+                )
+                for s in sat_order
+            ]
+            cn0 = [
+                "-" if (v := cn0_values.get(k, 0.0)) == 0 else _lt_fmt(v)
+                for k in cn0_order
+            ]
+            # RTK Fixed Rate (0~6) 取百分比
+            rates = [
+                _lt_fmt(
+                    utils.calc_value(df_valid, stats_to_calculate[f"df_{i}"].shape[0])
+                )
+                for i in range(7)
+            ]
+            # 发生过未定位(0-Unfixed)即视为失锁
+            lose_fix = "Fail" if stats_to_calculate["df_0"].shape[0] > 0 else "Pass"
+            # 经纬度不更新：出现连续2h经度和纬度都无变化则 Fail
+            loc_frozen = get_loc_frozen(df[["lat", "lng"]])
+
+            # Test Date: 起始时间-结束时间
+            test_date = (
+                f"{pd.Timestamp(df.index[0]):%Y%m%d %H:%M:%S}"
+                f"-{pd.Timestamp(df.index[-1]):%Y%m%d %H:%M:%S}"
+            )
+            self.long_test_data[file] = [
+                test_date,  # Test Date
+                _lt_fmt(file),  # Module
+                _lt_fmt(df_valid),  # Position count
+                _lt_fmt(checksum_fail),  # Checksum Error
+                lose_fix,  # Lose fix or not
+                _lt_fmt(nmea_missing),  # Missing NMEA
+                _lt_fmt(mis_seconds),  # Mis-seconds
+                *[_lt_fmt(stats_describe["df_distance"][k]) for k in cep_values],
+                *[_lt_fmt(stats_describe["df_hgt_delta"][k]) for k in cep_values],
+                *satellites,  # 卫星数×6
+                *cn0,  # CN0 × 18
+                *rates,  # RTK Fixed Rate×7
+                _lt_fmt(fixed_available_rate),  # 固定解可用率
+                loc_frozen,  # 经纬度不更新
+                "",  # Remark
+            ]
+            if "remark" not in self.long_test_data:
+                self.long_test_data["remark"] = self.remark
+
     def _get_filtered_index(self):
         """构建 index 列表，动态模式移除 "From RMS" 条目及空分隔符，同时去除 " From AVG" 后缀。"""
         _index = [x.format(self.top_n) if "{}" in x else x for x in position_index_list]
@@ -1458,7 +1566,13 @@ class PositionProcessor(PositionAttr):
                     label="distance",
                 )
                 self._gen_result(
-                    result_dict, file[:-4], df_scene, freq, df_expect, df_valid
+                    result_dict,
+                    file[:-4],
+                    df_scene,
+                    freq,
+                    df_expect,
+                    df_valid,
+                    collect_long=False,
                 )
 
             self._gen_report(

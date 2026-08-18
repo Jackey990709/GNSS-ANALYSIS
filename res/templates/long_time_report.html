@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Long-time Working Test Report</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Calibri, sans-serif;
+        font-size: 11pt;
+        color: #333;
+        background: #f5f5f5;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 100%;
+        margin: 0 auto;
+      }
+
+      .report-title {
+        scroll-margin-top: 16px;
+      }
+
+      .report-title {
+        font-size: 20pt;
+        font-weight: bold;
+        text-align: center;
+        padding: 6px 0;
+        background: #dce6f1;
+        margin-bottom: 10px;
+        border: 1px solid #999;
+      }
+
+      .report-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 10px;
+      }
+
+      .export-button {
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 4px;
+        background: #4f81bd;
+        color: #fff;
+        font: inherit;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .export-button:hover { background: #3d6c9f; }
+
+      .table-wrap {
+        max-height: calc(100vh - 40px);
+        overflow: auto;
+        margin-bottom: 30px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      table {
+        border-collapse: collapse;
+        width: auto;
+        min-width: 100%;
+      }
+
+      td,
+      th {
+        padding: 2px 8px;
+        border: 1px solid #ccc;
+        vertical-align: middle;
+        font-size: 12pt;
+        font-family: Calibri, sans-serif;
+        white-space: nowrap;
+        word-break: keep-all;
+        text-align: center;
+      }
+
+      th.hdr {
+        background: #dce6f1;
+        font-weight: bold;
+        text-align: center;
+      }
+
+      tbody td {
+        text-align: center;
+      }
+
+      .fail-cell {
+        background-color: #c62828 !important;
+        color: #fff;
+      }
+
+      .table-wrap table tr.sticky-header-first {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      .table-wrap table tr.sticky-header-second {
+        position: sticky;
+        top: var(--sticky-first-header-height, 27px);
+        z-index: 10;
+        box-shadow: 0 2px 2px rgba(0, 0, 0, 0.12);
+      }
+
+      tr:hover td {
+        background: #e8e8e8;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+          padding: 0;
+        }
+
+        .table-wrap {
+          max-height: none;
+          overflow: visible;
+          box-shadow: none;
+        }
+
+        .report-actions { display: none; }
+
+      }
+
+      /* Extracted cell styles */
+      .excel-style-3.excel-style-3 {
+        font-weight: bold;
+        font-style: italic;
+        background-color: #4f81bd;
+        vertical-align: middle;
+      }
+
+      .excel-style-7.excel-style-7 {
+        text-align: left;
+      }
+
+      .excel-style-13.excel-style-13 {
+        font-weight: bold;
+        background-color: #4f81bd;
+        text-align: center;
+        vertical-align: middle;
+      }
+
+      .excel-style-20.excel-style-20 {
+        background-color: #ffffff;
+        text-align: left;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="report-actions">
+        <button id="export-excel" class="export-button" type="button">导出 Excel</button>
+      </div>
+      <h2 id="report-1" class="report-title">Long-time Working Test Report-1</h2>
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th class="hdr excel-style-3">Comment</th>
+            <th colspan="50"></th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-7" colspan="51">工程师此处编写总结:</th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-7" colspan="51">
+              压力持续日期:
+            </th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-3">Setup</th>
+            <th colspan="50"></th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-7" colspan="39">
+              {{ remark }}
+            </th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+            <th class="hdr excel-style-10"></th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-13" rowspan="2">Test Date</th>
+            <th class="hdr excel-style-13" rowspan="2">Module</th>
+            <th class="hdr excel-style-13" rowspan="2">Position count</th>
+            <th class="hdr excel-style-13" rowspan="2">Checksum Error</th>
+            <th class="hdr excel-style-13" rowspan="2">Lose fix or not</th>
+            <th class="hdr excel-style-13" rowspan="2">Missing NMEA packet</th>
+            <th class="hdr excel-style-13" rowspan="2">Mis-seconds</th>
+            <th class="hdr excel-style-13" colspan="5">Horizontal CEP(m)</th>
+            <th class="hdr excel-style-13" colspan="5">Vertical CEP(m)</th>
+            <th class="hdr excel-style-13" colspan="6">
+              Average parsed satellites(个)
+            </th>
+            <th class="hdr excel-style-13" colspan="18">Average CN0(dB)</th>
+            <th class="hdr excel-style-13" colspan="7">RTK Fixed Rate(%)</th>
+            <th class="hdr excel-style-13" rowspan="2">固定解可用率(%)</th>
+            <th class="hdr excel-style-13" rowspan="2">经纬度不更新</th>
+            <th class="hdr excel-style-13" rowspan="2">Remark</th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-13">CEP50</th>
+            <th class="hdr excel-style-13">CEP68</th>
+            <th class="hdr excel-style-13">CEP95</th>
+            <th class="hdr excel-style-13">CEP99</th>
+            <th class="hdr excel-style-13">CEP100</th>
+            <th class="hdr excel-style-13">CEP50</th>
+            <th class="hdr excel-style-13">CEP68</th>
+            <th class="hdr excel-style-13">CEP95</th>
+            <th class="hdr excel-style-13">CEP99</th>
+            <th class="hdr excel-style-13">CEP100</th>
+            <th class="hdr excel-style-13">GP</th>
+            <th class="hdr excel-style-13">GL</th>
+            <th class="hdr excel-style-13">GA</th>
+            <th class="hdr excel-style-13">GB</th>
+            <th class="hdr excel-style-13">GQ</th>
+            <th class="hdr excel-style-13">GI</th>
+            <th class="hdr excel-style-13">GP_1</th>
+            <th class="hdr excel-style-13">GP_8</th>
+            <th class="hdr excel-style-13">GP_6</th>
+            <th class="hdr excel-style-13">GL_1</th>
+            <th class="hdr excel-style-13">GL_3</th>
+            <th class="hdr excel-style-13">GA_7</th>
+            <th class="hdr excel-style-13">GA_1</th>
+            <th class="hdr excel-style-13">GA_2</th>
+            <th class="hdr excel-style-13">GA_5</th>
+            <th class="hdr excel-style-13">GB_1</th>
+            <th class="hdr excel-style-13">GB_3</th>
+            <th class="hdr excel-style-13">GB_B</th>
+            <th class="hdr excel-style-13">GB_5</th>
+            <th class="hdr excel-style-13">GB_6</th>
+            <th class="hdr excel-style-13">GB_8</th>
+            <th class="hdr excel-style-13">GQ_1</th>
+            <th class="hdr excel-style-13">GQ_8</th>
+            <th class="hdr excel-style-13">GI_1</th>
+            <th class="hdr excel-style-13">0-Unfixed</th>
+            <th class="hdr excel-style-13">1-GPS</th>
+            <th class="hdr excel-style-13">2-DGPS</th>
+            <th class="hdr excel-style-13">3-PPS</th>
+            <th class="hdr excel-style-13">4-Fixed</th>
+            <th class="hdr excel-style-13">5-Float</th>
+            <th class="hdr excel-style-13">6-DR</th>
+          </tr>
+          <tbody id="report-1-data"></tbody>
+        </table>
+      </div>
+      <h2 id="report-2" class="report-title">Long-time Working Test Report-2(Not Support)</h2>
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th class="hdr excel-style-3">Comment</th>
+            <th colspan="50"></th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-7" colspan="26">工程师此处编写总结:</th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-20" colspan="26">
+              压力持续日期:
+            </th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-3">Setup</th>
+            <th colspan="50"></th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-7" colspan="26">
+              {{ remark }}
+            </th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-13" rowspan="2">Test Date</th>
+            <th class="hdr excel-style-13" rowspan="2">Module</th>
+            <th class="hdr excel-style-13" colspan="5">EPE 2D Error(m)</th>
+            <th class="hdr excel-style-13" colspan="5">EPE 3D Error(m)</th>
+            <th class="hdr excel-style-13" colspan="5">EPE Down Error(m)</th>
+            <th class="hdr excel-style-13" colspan="8">PL置信度(%)</th>
+            <th class="hdr excel-style-13" rowspan="2">Remark</th>
+          </tr>
+          <tr>
+            <th class="hdr excel-style-13">CEP50</th>
+            <th class="hdr excel-style-13">CEP68</th>
+            <th class="hdr excel-style-13">CEP95</th>
+            <th class="hdr excel-style-13">CEP99</th>
+            <th class="hdr excel-style-13">CEP100</th>
+            <th class="hdr excel-style-13">CEP50</th>
+            <th class="hdr excel-style-13">CEP68</th>
+            <th class="hdr excel-style-13">CEP95</th>
+            <th class="hdr excel-style-13">CEP99</th>
+            <th class="hdr excel-style-13">CEP100</th>
+            <th class="hdr excel-style-13">CEP50</th>
+            <th class="hdr excel-style-13">CEP68</th>
+            <th class="hdr excel-style-13">CEP95</th>
+            <th class="hdr excel-style-13">CEP99</th>
+            <th class="hdr excel-style-13">CEP100</th>
+            <th class="hdr excel-style-13">2D</th>
+            <th class="hdr excel-style-13">3D</th>
+            <th class="hdr excel-style-13">Down</th>
+            <th class="hdr excel-style-13">2D_Vel</th>
+            <th class="hdr excel-style-13">N_Vel</th>
+            <th class="hdr excel-style-13">E_Vel</th>
+            <th class="hdr excel-style-13">D_Vel</th>
+            <th class="hdr excel-style-13">3D_Vel</th>
+          </tr>
+          <tbody id="report-2-data"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- SOURCE_REPORT_DATA_START -->
+    <script src="report_data.js"></script>
+    <script>
+      function escapeHtml(value) {
+        const element = document.createElement("div");
+        element.textContent = value;
+        return element.innerHTML;
+      }
+
+      function renderReportRows(targetId, rows) {
+        const target = document.getElementById(targetId);
+        target.innerHTML = rows
+          .map((row) => `<tr>${row.map((value) => {
+            const failureClass = /fail/i.test(value) ? ' class="fail-cell"' : "";
+            return `<td${failureClass}>${escapeHtml(value)}</td>`;
+          }).join("")}</tr>`)
+          .join("");
+      }
+
+      renderReportRows("report-1-data", reportData.report1);
+      renderReportRows("report-2-data", reportData.report2);
+    </script>
+    <!-- SOURCE_REPORT_DATA_END -->
+    <script>
+(() => {
+  const exportButton = document.getElementById("export-excel");
+  const encoder = new TextEncoder();
+
+  function escapeXml(value) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function columnName(index) {
+    let name = "";
+    let value = index + 1;
+    while (value > 0) {
+      const remainder = (value - 1) % 26;
+      name = String.fromCharCode(65 + remainder) + name;
+      value = Math.floor((value - 1) / 26);
+    }
+    return name;
+  }
+
+  function tableToWorksheet(table) {
+    const occupied = new Set();
+    const merges = [];
+    const widths = [];
+    let columnCount = 0;
+    const rows = Array.from(table.rows).map((row, rowIndex) => {
+      let columnIndex = 0;
+      const cells = [];
+      Array.from(row.cells).forEach((cell) => {
+        while (occupied.has(`${rowIndex}:${columnIndex}`)) columnIndex += 1;
+        const rowSpan = cell.rowSpan || 1;
+        const columnSpan = cell.colSpan || 1;
+        for (let r = rowIndex; r < rowIndex + rowSpan; r += 1) {
+          for (let c = columnIndex; c < columnIndex + columnSpan; c += 1) {
+            if (r !== rowIndex || c !== columnIndex) occupied.add(`${r}:${c}`);
+          }
+        }
+        if (rowSpan > 1 || columnSpan > 1) {
+          merges.push(`${columnName(columnIndex)}${rowIndex + 1}:${columnName(columnIndex + columnSpan - 1)}${rowIndex + rowSpan}`);
+        }
+        const text = cell.textContent.trim();
+        const isDarkHeader = cell.classList.contains("excel-style-13") || cell.classList.contains("excel-style-3");
+        const isLeftAligned = cell.classList.contains("excel-style-7") || cell.classList.contains("excel-style-20");
+        const style = cell.classList.contains("fail-cell") ? 2 : isDarkHeader ? 1 : isLeftAligned ? 4 : cell.tagName === "TH" ? 3 : 5;
+        const reference = `${columnName(columnIndex)}${rowIndex + 1}`;
+        const suggestedWidth = Math.min(32, Math.max(10, Math.ceil(text.length / columnSpan) + 2));
+        for (let c = columnIndex; c < columnIndex + columnSpan; c += 1) {
+          widths[c] = Math.max(widths[c] || 10, suggestedWidth);
+        }
+        const isNumber = /^-?(?:\d+|\d*\.\d+)$/.test(text);
+        const cellXml = isNumber
+          ? `<c r="${reference}" s="${style}"><v>${text}</v></c>`
+          : `<c r="${reference}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(text)}</t></is></c>`;
+        cells.push(cellXml);
+        columnIndex += columnSpan;
+      });
+      columnCount = Math.max(columnCount, columnIndex);
+      return `<row r="${rowIndex + 1}" ht="20" customHeight="1">${cells.join("")}</row>`;
+    });
+    const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map((range) => `<mergeCell ref="${range}"/>`).join("")}</mergeCells>` : "";
+    const columnsXml = `<cols>${Array.from({ length: columnCount }, (_, index) => `<col min="${index + 1}" max="${index + 1}" width="${widths[index] || 10}" customWidth="1"/>`).join("")}</cols>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="7" topLeftCell="A8" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${columnsXml}<sheetData>${rows.join("")}</sheetData>${mergeXml}</worksheet>`;
+  }
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function number16(value) { return [value & 255, (value >>> 8) & 255]; }
+  function number32(value) { return [value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255]; }
+
+  function zip(files) {
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+    files.forEach(({ name, content }) => {
+      const nameBytes = encoder.encode(name);
+      const contentBytes = encoder.encode(content);
+      const crc = crc32(contentBytes);
+      const localHeader = new Uint8Array([
+        ...number32(0x04034b50), ...number16(20), ...number16(0), ...number16(0),
+        ...number16(0), ...number16(0), ...number32(crc), ...number32(contentBytes.length), ...number32(contentBytes.length),
+        ...number16(nameBytes.length), ...number16(0),
+      ]);
+      localParts.push(localHeader, nameBytes, contentBytes);
+      const centralHeader = new Uint8Array([
+        ...number32(0x02014b50), ...number16(20), ...number16(20), ...number16(0), ...number16(0),
+        ...number16(0), ...number16(0), ...number32(crc), ...number32(contentBytes.length), ...number32(contentBytes.length),
+        ...number16(nameBytes.length), ...number16(0), ...number16(0), ...number16(0), ...number16(0), ...number32(0), ...number32(offset),
+      ]);
+      centralParts.push(centralHeader, nameBytes);
+      offset += localHeader.length + nameBytes.length + contentBytes.length;
+    });
+    const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+    const endRecord = new Uint8Array([
+      ...number32(0x06054b50), ...number16(0), ...number16(0), ...number16(files.length), ...number16(files.length),
+      ...number32(centralSize), ...number32(offset), ...number16(0),
+    ]);
+    return new Blob([...localParts, ...centralParts, endRecord], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
+  function exportToExcel() {
+    const tables = Array.from(document.querySelectorAll(".table-wrap table"));
+    const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF4F81BD"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFC62828"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left style="thin"><color rgb="FFCCCCCC"/></left><right style="thin"><color rgb="FFCCCCCC"/></right><top style="thin"><color rgb="FFCCCCCC"/></top><bottom style="thin"><color rgb="FFCCCCCC"/></bottom></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs></styleSheet>';
+    const files = [
+      { name: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>' },
+      { name: "_rels/.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: "xl/workbook.xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report-1" sheetId="1" r:id="rId1"/><sheet name="Report-2" sheetId="2" r:id="rId2"/></sheets></workbook>' },
+      { name: "xl/_rels/workbook.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: "xl/styles.xml", content: styles },
+      { name: "xl/worksheets/sheet1.xml", content: tableToWorksheet(tables[0]) },
+      { name: "xl/worksheets/sheet2.xml", content: tableToWorksheet(tables[1]) },
+    ];
+    const blob = zip(files);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "long_time_working_test_report.xlsx";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  exportButton?.addEventListener("click", exportToExcel);
+})();
+    </script>
+    <script>
+      function highlightFailureCells() {
+        document.querySelectorAll("td").forEach((cell) => {
+          cell.classList.toggle("fail-cell", /fail/i.test(cell.textContent));
+        });
+      }
+
+      highlightFailureCells();
+
+      function updateStickyHeaderOffsets() {
+        document.querySelectorAll(".table-wrap table").forEach((table) => {
+          const firstHeaderRow = table.rows[5];
+          const secondHeaderRow = table.rows[6];
+          if (firstHeaderRow) {
+            firstHeaderRow.classList.add("sticky-header-first");
+            secondHeaderRow?.classList.add("sticky-header-second");
+            table.style.setProperty(
+              "--sticky-first-header-height",
+              `${firstHeaderRow.getBoundingClientRect().height}px`,
+            );
+          }
+        });
+      }
+
+      window.addEventListener("resize", updateStickyHeaderOffsets);
+      updateStickyHeaderOffsets();
+    </script>
+  </body>
+</html>
