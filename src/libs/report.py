@@ -272,13 +272,9 @@ class Report:
 
     def gen_precision_report(self):
         self.copy_assets_to_folder(LocalPath.ASSETS_PATH)
-
-        self._get_precision_data()
-
         env = _load_package()
-        chart_tempate = env.get_template("chart.html")
-        chart_double_y_tempate = env.get_template("chart-double-y.html")
 
+        # 先处理依赖 df_result / long_test_data 的报表生成
         self._gen_excel()
 
         if self.is_long_test:
@@ -295,6 +291,15 @@ class Report:
             log_info=self.log_info,
             table_data=self.df_result.to_html(table_id="table_id"),
         )
+
+        # 释放已用完的大内存对象
+        del self.df_result
+        del self.long_test_data
+
+        # 再处理精度数据（基于 check_list 从文件读取，不依赖 df_result）
+        self._get_precision_data()
+        chart_tempate = env.get_template("chart.html")
+        chart_double_y_tempate = env.get_template("chart-double-y.html")
 
         self._gen_task(
             chart_tempate,
@@ -999,9 +1004,28 @@ class Report:
         for file in self.check_list:
             file = os.path.splitext(file)[0]
             try:
+                usecols = (
+                    [
+                        "delay",
+                        "satellites",
+                        "alt",
+                        "sep",
+                        "label",
+                        "pdop",
+                        "hdop",
+                        "vdop",
+                        "utc_date_time",
+                    ]
+                    + ([f"{_sys}_used" for _sys in sys_list])
+                    + filter_list
+                )
+                if self.is_ttff:
+                    usecols.append("header")
+
                 df = pd.read_csv(
                     os.path.join(self.csv_path, file + f"{File.ORIGINAL_FILE_EXT}"),
                     low_memory=False,
+                    usecols=usecols,
                 )
 
                 df_utc_time = self._format_utc_time(df)
@@ -1039,21 +1063,6 @@ class Report:
                         .to_list(),
                     },
                 ]
-
-                # df_speed = df[["knot", "kmph"]].fillna(DEFAULT_NULL_VALUE)
-                # speed_dict[file] = [
-                #     _format_index(df_speed),
-                #     {
-                #         "knot": df_speed["knot"].to_list(),
-                #         "kmph": df_speed["kmph"].to_list(),
-                #     },
-                # ]
-
-                # df_cog = df[["cog"]].fillna(DEFAULT_NULL_VALUE)
-                # cog_dict[file] = [
-                #     _format_index(df_cog),
-                #     {"cog": df_cog["cog"].to_list()},
-                # ]
 
                 df_alt_sep = df[["alt", "sep"]].fillna(DEFAULT_NULL_VALUE)
                 alt_sep_dict[file] = [
@@ -1487,6 +1496,7 @@ class Report:
 
     def _write_file_with_js(self, filename, template, **kwargs):
         # 将大量 test_datas 写入独立 JS 文件，按端口逐个序列化避免内存溢出
+        print(f"Generating JS {filename} ...")
         if "test_datas" in kwargs:
             data_filename = filename.replace(".html", ".js")
             js_dir = os.path.join(self.folder_path, "assets", "js")
@@ -1508,11 +1518,13 @@ class Report:
         self._write_file(filename, template, kwargs)
 
     def _gen_task(self, template, filename, plot=False, **kwargs):
+        print(f"Generating {filename} ...")
         if plot:
             self._plot_png(filename[:-5], **kwargs)
         self._write_file_with_js(filename, template, **kwargs)
 
     def _plot_png(self, filename, **kwargs):
+        print(f"Generating PNG {filename} ...")
         plot_data = kwargs["test_datas"]
         title = kwargs["title"]
         num = len(plot_data.keys())

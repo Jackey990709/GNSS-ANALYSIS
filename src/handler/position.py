@@ -1018,8 +1018,13 @@ class PositionProcessor(PositionAttr):
         df = pd.DataFrame(self.position_dict)
         df.drop(df.tail(1).index, inplace=True)  # 剔除最后一行数据
 
+        # 转成 DataFrame 后立即释放 position_dict，避免其数据驻留到下一个文件才被 init_data 覆盖
+        self.position_dict.clear()
+
         if self.scenes and write_file:
-            self.df_datas.setdefault(file, {"original": df})
+            # 仅初始化 df_datas[file]
+            # self.df_datas.setdefault(file, {"original": df})
+            self.df_datas.setdefault(file, {})
 
         # 计算总卫星数
         df["total_svs"] = df[
