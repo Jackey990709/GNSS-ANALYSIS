@@ -707,7 +707,7 @@ class PositionProcessor(PositionAttr):
                 if self.stop_event and self.stop_event.is_set():
                     break
 
-                if line.startswith(b"["):
+                if line.startswith(b"[LOGGA,"):
                     continue
 
                 line_upper = line.upper()
