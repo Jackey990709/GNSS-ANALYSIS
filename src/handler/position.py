@@ -171,6 +171,8 @@ class PositionAttr:
         self._is_pos320 = False
 
     def create(self):
+        self.df_datas.clear()
+
         if not self.filepath:
             return
 
@@ -654,6 +656,7 @@ class PositionProcessor(PositionAttr):
 
     def check_file_type(self) -> tuple[int, int]:
         skiprows = 0
+        self._is_pos320 = False
         with open(
             self.point, "r", encoding="utf-8", errors="ignore"  # pyright: ignore
         ) as f:
