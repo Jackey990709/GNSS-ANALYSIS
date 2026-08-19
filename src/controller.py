@@ -117,14 +117,14 @@ class MainController(QObject):
         self.position.processor.action = self.action
 
         # 是否分割统计场景，分割信息从REPORT-UTC.json获取
+        scenes = []
         if self.view.check_split.isChecked():
             scenes = self.gen_scenes()
             if not scenes:
                 self.view.end_signal_call()
                 return
 
-            self.position.processor.scenes = scenes
-
+        self.position.processor.scenes = scenes
         self.position.start()
 
     def gen_scenes(self):
