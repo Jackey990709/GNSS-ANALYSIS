@@ -1232,11 +1232,8 @@ class Report:
                 ]
 
                 if self.is_moving:
-                    df_distance = df[["label", "ref_label", "distance", "hgt_delta"]]
-                    df_4_distance = df.loc[
-                        df["label"] == 4,
-                        ["label", "ref_label", "distance", "hgt_delta"],
-                    ]
+                    df_distance = df[["distance", "hgt_delta"]]
+                    df_4_distance = df.loc[df["label"] == 4, ["distance", "hgt_delta"]]
                     precision_dict[file] = [
                         _format_index(df_distance),
                         {
