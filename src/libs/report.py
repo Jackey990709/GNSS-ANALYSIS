@@ -40,8 +40,8 @@ warnings.filterwarnings(
 plt.rcParams["font.family"] = "SimHei"
 plt.rcParams["axes.unicode_minus"] = False
 
-TIME_UNIT = "ms"
-FIX_LABEL = "定位符"
+TIME_UNIT = "Millisecond"
+FIX_LABEL = "Quality"
 
 
 def _fill(
@@ -298,7 +298,7 @@ class Report:
             plot=True,
             title="RTK Delay",
             plot_item="delay",
-            description="<p>统计GGA中RTK时延</p>",
+            description="统计GGA中RTK时延",
             test_datas=self.__dict__.pop("_delay", {}),
         )
         self._gen_task(
@@ -307,7 +307,7 @@ class Report:
             plot=True,
             title="Satellites Trend",
             plot_item="satellites",
-            description="<p>统计GGA中卫星个数</p>",
+            description="统计GGA中卫星个数",
             test_datas=self.__dict__.pop("_satellites", {}),
         )
         self._gen_task(
@@ -316,55 +316,63 @@ class Report:
             plot=True,
             plot_item=TIME_UNIT,
             title="Time Continuity",
-            description=f"<p>统计RMC时间连续性，单位为{TIME_UNIT}</p>",
+            description=f"统计RMC时间连续性，单位为{TIME_UNIT}",
             test_datas=self.__dict__.pop("_time", {}),
         )
         self._gen_task(
             chart_tempate,
             "gps_cn0.html",
             title="GPS CN0",
+            description="统计GSV中GPS卫星信噪比",
             test_datas=self.__dict__.pop("_gps", {}),
         )
         self._gen_task(
             chart_tempate,
             "bds1_cn0.html",
-            title="BDS CN0",
+            title="BDS1 CN0",
+            description="统计GSV中BDS卫星(B1I+B2a+B2b信噪比",
             test_datas=self.__dict__.pop("_bds_1", {}),
         )
         self._gen_task(
             chart_tempate,
             "bds2_cn0.html",
-            title="BDS CN0",
+            title="BDS2 CN0",
+            description="统计GSV中BDS(B1C+B2I+B3I)卫星信噪比",
             test_datas=self.__dict__.pop("_bds_2", {}),
         )
         self._gen_task(
             chart_tempate,
             "gal_cn0.html",
             title="GAL CN0",
+            description="统计GSV中GAL卫星信噪比",
             test_datas=self.__dict__.pop("_gal", {}),
         )
         self._gen_task(
             chart_tempate,
             "glo_cn0.html",
             title="GLO CN0",
+            description="统计GSV中GLO卫星信噪比",
             test_datas=self.__dict__.pop("_glo", {}),
         )
         self._gen_task(
             chart_tempate,
             "qzss_cn0.html",
             title="QZSS CN0",
+            description="统计GSV中QZSS卫星信噪比",
             test_datas=self.__dict__.pop("_qzss", {}),
         )
         self._gen_task(
             chart_tempate,
             "irnss_cn0.html",
             title="IRNSS CN0",
+            description="统计GSV中IRNSS卫星信噪比",
             test_datas=self.__dict__.pop("_irnss", {}),
         )
         self._gen_task(
             chart_tempate,
             "svs_used_trend.html",
-            title="SVs Used",
+            title="SVs Used Trend",
+            description="统计GSA中卫星个数",
             test_datas=self.__dict__.pop("_svs_used", {}),
         )
         self._gen_task(
@@ -372,49 +380,49 @@ class Report:
             "sog_trend.html",
             title="SOG Trend",
             plot_item="sog",
-            description="<p>统计RMC中速度误差</p>",
+            description="统计RMC中速度误差",
             test_datas=self.__dict__.pop("_speed", {}),
         )
         self._gen_task(
             chart_double_y_tempate,
             "accuracy_trend.html",
             title="Accuracy Trend",
-            description="<p>统计所有解水平/高程误差</p>",
+            description="统计所有解水平/高程误差",
             test_datas=self.__dict__.pop("_precision", {}),
         )
         self._gen_task(
             chart_tempate,
             "dop_trend.html",
             title="DOP Trend",
-            description="<p>统计GSA语句中DOP值</p>",
+            description="统计GSA语句中DOP值",
             test_datas=self.__dict__.pop("_dop", {}),
         )
         self._gen_task(
             chart_double_y_tempate,
             "fix_accuracy_trend.html",
             title="Fix Accuracy Trend",
-            description="<p>统计固定解水平/高程误差</p>",
+            description="统计固定解水平/高程误差",
             test_datas=self.__dict__.pop("_fix_precision", {}),
         )
         self._gen_task(
             chart_tempate,
             "cog_trend.html",
             title="COG trend",
-            description="<p>统计RMC中航向角变化</p>",
+            description="统计RMC中航向角变化",
             test_datas=self.__dict__.pop("_cog", {}),
         )
         self._gen_task(
             chart_double_y_tempate,
             "alt_sep_trend.html",
             title="MSL Alt/GEO Sep trend",
-            description="<p>统计GGA中高度和大地水准面分离变化</p>",
+            description="统计GGA中高度和大地水准面分离变化",
             test_datas=self.__dict__.pop("_alt_sep", {}),
         )
         self._gen_task(
             chart_double_y_tempate,
             "float_accuracy_trend.html",
             title="Float Accuracy Trend",
-            description="<p>统计浮点解水平/高程误差</p>",
+            description="统计浮点解水平/高程误差",
             test_datas=self.__dict__.pop("_float_precision", {}),
         )
 
