@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-CLIENT_VERSION: str = "v2.0"
-VERSION: str = "v2.0.1"
+CLIENT_VERSION: str = "v2.1"
+VERSION: str = "v2.1.1"
 
 
 class HandleItem(IntEnum):
