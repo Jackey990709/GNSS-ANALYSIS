@@ -1,13 +1,8 @@
 import logging
-import os
-import re
-import base64
 import sys
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import unpad
 import traceback
 from PySide6.QtGui import QFont, QIcon, QTextCursor
-from PySide6.QtCore import QDateTime, QTimer, Slot
+from PySide6.QtCore import QDateTime, QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
@@ -21,6 +16,7 @@ from pathlib import Path
 
 from src import CLIENT_VERSION, title
 from src.libs.parser import write_yml
+from src.libs.license import LicenseValidationError, LicenseValidator
 from src.util.const import File
 from src.util.msg import DialogMessage, Message
 from src.util.param import parameters
@@ -28,6 +24,24 @@ from src.ui.Main_ui import Ui_MainView
 from src.util.utils import check_log_file
 
 logger = logging.getLogger(__name__)
+# LICENSE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
+LICENSE_CHECK_INTERVAL_MS = 60 * 1000
+
+
+class LicenseCheckWorker(QObject):
+    """在后台线程执行 license 校验，避免阻塞 GUI 主线程。"""
+
+    finished = Signal(object)  # None=成功，否则为错误文案
+
+    def run(self) -> None:
+        print("LicenseCheckWorker: run() called in thread:", QThread.currentThread())
+        try:
+            license_path = Path(sys.argv[0]).resolve().parent / "license.lic"
+            LicenseValidator(license_path).validate()
+            self.finished.emit(None)
+        except LicenseValidationError as exc:
+            logger.warning("License validation failed: %s", exc)
+            self.finished.emit(str(exc))
 
 
 class MainView(Ui_MainView, QMainWindow):
@@ -48,44 +62,37 @@ class MainView(Ui_MainView, QMainWindow):
         self.on_box_mode_currentIndexChanged(0)
         self.on_combo_type_currentIndexChanged(0)
 
-        QTimer.singleShot(0, self.read_mac)
+        # license 校验通过前禁用"开始"，避免用户在结果出来前触发同步校验造成卡顿。
+        self.btn_start.setEnabled(False)
+        self._license_check_timer = QTimer(self)
+        self._license_check_timer.setInterval(LICENSE_CHECK_INTERVAL_MS)
+        self._license_check_timer.timeout.connect(self._start_background_license_check)
+        self._start_background_license_check()
 
-    def read_mac(self):
-        key = b"quectel@gnss1234"  # 密钥
-        try:
-            mac_address = None
-            output = os.popen("ipconfig /all").read()
-            mac_pattern = r"(?s)(?:Ethernet|以太网)\s*\d*:.+?(?:Physical Address|物理地址)[\. ]+: ([\w-]+)"
-            match = re.search(mac_pattern, output)
-            mac_address = match.group(1) if match else ""
+    def _start_background_license_check(self) -> None:
+        """后台校验 license，避免启动时阻塞 GUI 主线程。"""
+        self._license_worker = LicenseCheckWorker()
+        self._license_thread = QThread(self)
+        self._license_worker.moveToThread(self._license_thread)
+        self._license_thread.started.connect(self._license_worker.run)
+        self._license_worker.finished.connect(self._on_license_check_done)
+        self._license_worker.finished.connect(self._license_thread.quit)
+        self._license_worker.finished.connect(self._license_worker.deleteLater)
+        self._license_thread.finished.connect(self._license_thread.deleteLater)
+        self._license_thread.start()
 
-            if not mac_address:
-                raise Exception("MAC address not found!")
-
-            # 读取配置文件MAC地址
-            mac_path = Path(rf".\\mac.ini")
-            if not mac_path.exists():
-                raise Exception("MAC configuration file not found!")
-
-            with open(rf".\\mac.ini", "r", encoding="utf-8") as f:
-                mac_list = f.readline()
-            # MAC 配置文件解密
-            iv = base64.b64decode(mac_list[:24])
-            ciphertext = base64.b64decode(mac_list[24:])
-            cipher = AES.new(key, AES.MODE_CBC, iv)
-            decrypted_text = (
-                unpad(cipher.decrypt(ciphertext), AES.block_size)
-                .decode()
-                .strip()
-                .split("\n")
-            )
-            # 查看MAC地址是否包含在内
-            if mac_address not in decrypted_text:
-                raise Exception("Sorry, you do not have permission to use!")
-        except Exception as e:
-            self.show_warning(repr(e))
-            # 退出界面
-            sys.exit()
+    @Slot(object)
+    def _on_license_check_done(self, error: object) -> None:
+        if error:
+            self.show_warning(str(error))
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
+            return
+        # 校验通过，启用"开始"按钮。
+        self.btn_start.setEnabled(True)
+        if not self._license_check_timer.isActive():
+            self._license_check_timer.start()
 
     @Slot(int)
     def on_box_mode_currentIndexChanged(self, index: int):
