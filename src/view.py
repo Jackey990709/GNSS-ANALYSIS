@@ -24,8 +24,7 @@ from src.ui.Main_ui import Ui_MainView
 from src.util.utils import check_log_file
 
 logger = logging.getLogger(__name__)
-# LICENSE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
-LICENSE_CHECK_INTERVAL_MS = 60 * 1000
+LICENSE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
 
 
 class LicenseCheckWorker(QObject):
