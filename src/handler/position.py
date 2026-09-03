@@ -794,6 +794,7 @@ class PositionProcessor(PositionAttr):
                             or parser.utc_time_str.endswith(".000")
                             else False
                         )
+                        gsv_flag = True
 
                     # 处理另一个类型的数据（如果是RMC则处理GGA，反之亦然）
                     elif (
