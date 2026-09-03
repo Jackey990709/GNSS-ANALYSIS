@@ -6,6 +6,7 @@
 {% else %}
 <script src="../assets/js/echarts.min.js"></script>
 {% endif %}
+<script src="../assets/js/lang.js"></script>
 {% endblock %}
 
 {% block style %}
@@ -22,7 +23,7 @@
 {% block body %}
 {% if description is defined %}
 	<div style='font-weight:bold'>
-		{{ description }}
+		<p data-i18n="{{ title.replace(" ", "_") | lower }}">{{ description }}</p>
 	</div>
 {% endif %}
 
@@ -55,7 +56,7 @@
         for (var seriesName in seriesData) {
             if (seriesData.hasOwnProperty(seriesName)) {
                 seriesList.push({
-                    name: seriesName,
+                    name: window.t ? t(seriesName) : seriesName,
                     type: 'line',
                     data: seriesData[seriesName]
                 });
@@ -103,6 +104,8 @@
         
         // 设置图表配置
         myChart.setOption(option);
+        // 保存原始数据，供语言切换时更新图例名
+        myChart._raw = seriesData;
         myArray.push(myChart);
     }
     
@@ -112,5 +115,21 @@
             e.resize();
         });
     });
+
+    // 语言切换时仅增量更新 series.name（图例名），不重传 data
+    window.onLangChange = function() {
+        myArray.forEach(function(myChart) {
+            var seriesData = myChart._raw;
+            if (!seriesData) return;
+            var namePatch = [];
+            for (var seriesName in seriesData) {
+                if (seriesData.hasOwnProperty(seriesName)) {
+                    namePatch.push({ name: window.t ? t(seriesName) : seriesName });
+                }
+            }
+            myChart.setOption({ series: namePatch });
+        });
+    };
 </script>
+<script>initLang();</script>
 {% endblock %}

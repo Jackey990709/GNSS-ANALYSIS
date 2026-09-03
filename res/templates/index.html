@@ -14,7 +14,8 @@
         <!-- 左侧导航 -->
         <nav id="sidebar">
             <div class="sidebar-header">
-                <h2>GNSS Report</h2>
+                <h2 id="header-title">GNSS Report</h2>
+                <button id="lang-toggle" title="切换语言">中</button>
             </div>
             <ul id="nav-list"></ul>
         </nav>
@@ -38,7 +39,11 @@
         </div>
     </div>
 
+    <script src="assets/js/lang.js"></script>
     <script>
+        /** 当前语言：en / zh，localStorage 记忆 */
+        let currentLang = localStorage.getItem('gnss-lang') || 'en';
+
         /** 导航结构数据：仅需 label 和 children，href 自动从 label 推导 */
         const navItems = [
             { label: 'Report' },
@@ -57,8 +62,8 @@
             { label: 'COG Trend' },
             { label: 'DOP Trend' },
             { label: 'Alt/Sep Trend' },
-            { label: 'Accuracy Trend' },
             { label: 'Time Continuity' },
+            { label: 'Accuracy Trend' },
             { label: 'Fix Accuracy Trend' },
             { label: 'Float Accuracy Trend' },
             { label: 'PQTMVEL Trend' },
@@ -74,20 +79,23 @@
             const navList = document.getElementById('nav-list');
             const pageFrame = document.getElementById('page-frame');
 
+            // 当前选中的导航页，切换语言重渲染时保持高亮
+            let activeHref = 'data/report.html';
+
             function renderNav() {
                 navList.innerHTML = '';
                 navItems.forEach(item => {
                     if (item.children) {
                         const li = document.createElement('li');
                         li.className = 'nav-group';
-                        li.innerHTML = `<a href="javascript:void(0)" class="nav-group-toggle">${item.label} <span class="arrow">▶</span></a>`;
+                        li.innerHTML = `<a href="javascript:void(0)" class="nav-group-toggle">${t(item.label)} <span class="arrow">▶</span></a>`;
                         const ul = document.createElement('ul');
                         ul.className = 'nav-group-items';
                         item.children.forEach(child => {
                             const a = document.createElement('a');
                             a.href = '#';
                             a.setAttribute('data-href', labelToHref(child.label));
-                            a.textContent = child.label;
+                            a.textContent = t(child.label);
                             ul.appendChild(document.createElement('li')).appendChild(a);
                         });
                         li.appendChild(ul);
@@ -97,8 +105,8 @@
                         const a = document.createElement('a');
                         a.href = '#';
                         a.setAttribute('data-href', href);
-                        a.textContent = item.label;
-                        if (href === 'data/report.html') a.className = 'active';
+                        a.textContent = t(item.label);
+                        if (href === activeHref) a.className = 'active';
                         navList.appendChild(document.createElement('li')).appendChild(a);
                     }
                 });
@@ -124,11 +132,29 @@
                     e.preventDefault();
                     navList.querySelectorAll('a').forEach(l => l.classList.remove('active'));
                     a.classList.add('active');
+                    activeHref = href;
                     loadPage(href);
                 }
             });
 
+            const langToggle = document.getElementById('lang-toggle');
+
+            function applyLang() {
+                langToggle.textContent = currentLang === 'en' ? '中' : 'EN';
+                langToggle.title = currentLang === 'en' ? '切换语言' : 'Switch language';
+                document.getElementById('header-title').textContent = t('GNSS Report');
+                document.getElementById('sidebar-toggle').title = currentLang === 'en' ? '切换导航栏' : 'Toggle sidebar';
+            }
+
+            langToggle.addEventListener('click', function() {
+                currentLang = currentLang === 'en' ? 'zh' : 'en';
+                localStorage.setItem('gnss-lang', currentLang);
+                applyLang();
+                renderNav();
+            });
+
             renderNav();
+            applyLang();
             loadPage('data/report.html');
         });
     </script>
