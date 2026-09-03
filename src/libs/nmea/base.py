@@ -59,6 +59,9 @@ class NMEAParser(_NMEABase):
         error_code: bool = False,
         check: bool = True,
     ):
+        if "RMC," in line or "GGA," in line:
+            if line[3:7] != "RMC," and line[3:7] != "GGA,":
+                error_code = True
         self.chars = chars
 
         if error_code:
