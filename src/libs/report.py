@@ -954,7 +954,8 @@ class Report:
                     os.path.join(self.csv_path, file + f"{File.ORIGINAL_FILE_EXT}"),
                     low_memory=False,
                 )
-
+                df = df.copy()
+                df["date_time"] = df["utc_date_time"]
                 df_utc_time = self._format_utc_time(df)
                 if self.begin_time and self.end_time:
                     df.index = pd.to_datetime(df.index, errors="coerce")
@@ -969,7 +970,7 @@ class Report:
                 df_delay = df["delay"].fillna(DEFAULT_NULL_VALUE)
                 df_satellites = df["satellites"].fillna(DEFAULT_NULL_VALUE)
                 # df_label = df["label"].fillna(DEFAULT_NULL_VALUE)
-                df_snr = df[filter_list]
+                df_snr = df[filter_list + ["date_time"]]
 
                 delay_dict[file] = [
                     _format_index(df_delay),
@@ -1015,8 +1016,8 @@ class Report:
                     },
                 ]
 
-                df_svs_used = df[[f"{_sys}_used" for _sys in sys_list]]
-                svs_used_str = df_svs_used.index.str
+                df_svs_used = df[[f"{_sys}_used" for _sys in sys_list] + ["date_time"]]
+                svs_used_str = df_svs_used["date_time"].str
                 df_svs_used = df_svs_used[
                     svs_used_str.endswith(".00") | svs_used_str.endswith(".000")
                 ].fillna(DEFAULT_NULL_VALUE)
@@ -1029,8 +1030,8 @@ class Report:
                 ]
 
                 df.loc[df["label"] == 0, ["pdop", "hdop", "vdop"]] = np.nan
-                df_dop = df[["pdop", "hdop", "vdop"]]
-                df_dop_index_str = df_dop.index.str
+                df_dop = df[["pdop", "hdop", "vdop", "date_time"]]
+                df_dop_index_str = df_dop["date_time"].str
                 df_dop = df_dop[
                     df_dop_index_str.endswith(".00") | df_dop_index_str.endswith(".000")
                 ]
@@ -1045,7 +1046,7 @@ class Report:
                 ]
 
                 if df_snr is not None:
-                    df_index_str = df_snr.index.str
+                    df_index_str = df_snr["date_time"].str
                     df_snr = df_snr[
                         df_index_str.endswith(".00") | df_index_str.endswith(".000")
                     ]
@@ -1213,6 +1214,9 @@ class Report:
                 df = pd.read_csv(file_path, low_memory=False)
                 if df.empty:
                     raise FileNotFoundError
+
+                df = df.copy()
+                df["date_time"] = df["utc_date_time"]
                 df.drop_duplicates(subset=["utc_date_time"], keep="first", inplace=True)
                 df.dropna(subset=["utc_date_time"], inplace=True)
                 df.set_index("utc_date_time", inplace=True)
@@ -1269,8 +1273,8 @@ class Report:
                             .to_list(),
                         },
                     ]
-                    df_gps_l1 = df[["gps_l1", "distance", "hgt_delta"]]
-                    df_gps_index_str = df_gps_l1.index.str
+                    df_gps_l1 = df[["gps_l1", "distance", "hgt_delta", "date_time"]]
+                    df_gps_index_str = df_gps_l1["date_time"].str
                     df_gps_l1 = df_gps_l1[
                         df_gps_index_str.endswith(".00")
                         | df_gps_index_str.endswith(".000")
