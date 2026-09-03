@@ -226,6 +226,8 @@ class Report:
         begin_time: Optional[pd.Timestamp] = None,
         end_time: Optional[pd.Timestamp] = None,
         sheet_name: str = "All",
+        is_long_test: bool = False,
+        long_test_data: Optional[dict] = None,
     ):
         self.df_result = df_result
         self.folder_path = folder_path
@@ -241,6 +243,8 @@ class Report:
         self.sheet_name = sheet_name
         if self.sheet_name == "All":
             Report._excel_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        self.is_long_test = is_long_test
+        self.long_test_data = long_test_data or {}
         self.excel_timestamp = Report._excel_timestamp
 
         self.csv_path = Path(folder_path) / ("../all/data" if begin_time else "data")
@@ -268,19 +272,15 @@ class Report:
 
     def gen_precision_report(self):
         self.copy_assets_to_folder(LocalPath.ASSETS_PATH)
-
-        self._get_precision_data()
-
         env = _load_package()
-        chart_tempate = env.get_template("chart.html")
-        chart_double_y_tempate = env.get_template("chart-double-y.html")
 
+        # 先处理依赖 df_result / long_test_data 的报表生成
         self._gen_excel()
 
-        if not self.is_moving:
-            self._gen_static_template()
-        else:
-            self._gen_dynamic_template()
+        if self.is_long_test:
+            self._gen_long_time_report()
+
+        self._gen_dynamic_template() if self.is_moving else self._gen_static_template()
 
         self._gen_task(
             env.get_template("report.html"),
@@ -291,6 +291,15 @@ class Report:
             log_info=self.log_info,
             table_data=self.df_result.to_html(table_id="table_id"),
         )
+
+        # 释放已用完的大内存对象
+        del self.df_result
+        del self.long_test_data
+
+        # 再处理精度数据（基于 check_list 从文件读取，不依赖 df_result）
+        self._get_precision_data()
+        chart_tempate = env.get_template("chart.html")
+        chart_double_y_tempate = env.get_template("chart-double-y.html")
 
         self._gen_task(
             chart_tempate,
@@ -442,6 +451,51 @@ class Report:
         # 图表数据已写入文件，提前释放实例所有属性
         plt.close("all")
         self.__dict__.clear()
+
+    def _gen_long_time_report(self):
+        """Long-time test: long_test_data 已是 Report-1 的行数组，直接收集生成 JS，不做二次解析。"""
+        remark = self.long_test_data.pop("remark", "")
+        rows = [d for d in self.long_test_data.values() if isinstance(d, list)]
+        env = _load_package()
+        out_dir = str(Path(self.folder_path).parents[2])
+        js_path = os.path.join(out_dir, "report_data.js")
+        html_path = os.path.join(out_dir, "long_time_report.html")
+
+        # 若 out_dir 下已有 html 和 js，则把本次行追加到已有 report1 末尾；否则创建新的
+        existing: list = []
+        if os.path.exists(js_path) and os.path.exists(html_path):
+            try:
+                with open(js_path, encoding="utf-8") as f:
+                    js_text = f.read()
+                start = js_text.find("{")
+                end = js_text.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    existing = json.loads(js_text[start : end + 1]).get("report1", [])
+            except (ValueError, OSError):
+                existing = []
+
+        # 追加去重：以 test_date（每行第1列）作为去重键，已存在则不重复添加
+        existing_keys = {"".join(r) for r in existing if isinstance(r, list) and r}
+        for r in rows:
+            key = "".join(r)
+            if key not in existing_keys:
+                existing.append(r)
+                existing_keys.add(key)
+        report_data = {"report1": existing, "report2": []}
+        with open(js_path, encoding="utf-8", mode="w") as f:
+            # 数据量可能很大，用 iterencode 流式写入避免一次性构建大字符串导致内存溢出
+            f.write("var reportData = ")
+            for chunk in json.JSONEncoder(ensure_ascii=False).iterencode(report_data):
+                f.write(chunk)
+            f.write(";")
+
+        if not os.path.exists(html_path):
+            self._write_file(
+                "long_time_report.html",
+                env.get_template("long_time_report.html"),
+                kwargs={"remark": remark},
+                write_path=out_dir,
+            )
 
     def copy_assets_to_folder(self, assets_path: Path, copy_index: bool = True):
         target_path = Path(self.folder_path)
@@ -950,9 +1004,28 @@ class Report:
         for file in self.check_list:
             file = os.path.splitext(file)[0]
             try:
+                usecols = (
+                    [
+                        "delay",
+                        "satellites",
+                        "alt",
+                        "sep",
+                        "label",
+                        "pdop",
+                        "hdop",
+                        "vdop",
+                        "utc_date_time",
+                    ]
+                    + ([f"{_sys}_used" for _sys in sys_list])
+                    + filter_list
+                )
+                if self.is_ttff:
+                    usecols.append("header")
+
                 df = pd.read_csv(
                     os.path.join(self.csv_path, file + f"{File.ORIGINAL_FILE_EXT}"),
                     low_memory=False,
+                    usecols=usecols,
                 )
                 df = df.copy()
                 df["date_time"] = df["utc_date_time"]
@@ -991,21 +1064,6 @@ class Report:
                         .to_list(),
                     },
                 ]
-
-                # df_speed = df[["knot", "kmph"]].fillna(DEFAULT_NULL_VALUE)
-                # speed_dict[file] = [
-                #     _format_index(df_speed),
-                #     {
-                #         "knot": df_speed["knot"].to_list(),
-                #         "kmph": df_speed["kmph"].to_list(),
-                #     },
-                # ]
-
-                # df_cog = df[["cog"]].fillna(DEFAULT_NULL_VALUE)
-                # cog_dict[file] = [
-                #     _format_index(df_cog),
-                #     {"cog": df_cog["cog"].to_list()},
-                # ]
 
                 df_alt_sep = df[["alt", "sep"]].fillna(DEFAULT_NULL_VALUE)
                 alt_sep_dict[file] = [
@@ -1424,17 +1482,22 @@ class Report:
 
         return df_utc_time[1:]
 
-    def _write_file(self, filename, template, kwargs=None):
+    def _write_file(
+        self, filename, template, kwargs=None, write_path: Optional[str] = None
+    ):
         if kwargs is None:
             kwargs = {}
 
         with open(
-            os.path.join(self.data_path, filename), encoding="utf-8", mode="w"
+            os.path.join(write_path or self.data_path, filename),
+            encoding="utf-8",
+            mode="w",
         ) as f:
             f.write(template.render(**kwargs))
 
     def _write_file_with_js(self, filename, template, **kwargs):
         # 将大量 test_datas 写入独立 JS 文件，按端口逐个序列化避免内存溢出
+        print(f"Generating JS {filename} ...")
         if "test_datas" in kwargs:
             data_filename = filename.replace(".html", ".js")
             js_dir = os.path.join(self.folder_path, "assets", "js")
@@ -1456,11 +1519,13 @@ class Report:
         self._write_file(filename, template, kwargs)
 
     def _gen_task(self, template, filename, plot=False, **kwargs):
+        print(f"Generating {filename} ...")
         if plot:
             self._plot_png(filename[:-5], **kwargs)
         self._write_file_with_js(filename, template, **kwargs)
 
     def _plot_png(self, filename, **kwargs):
+        print(f"Generating PNG {filename} ...")
         plot_data = kwargs["test_datas"]
         title = kwargs["title"]
         num = len(plot_data.keys())
