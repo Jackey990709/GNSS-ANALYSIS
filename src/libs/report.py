@@ -173,6 +173,44 @@ def _format_index(df):
     return [pattern.sub("", element)[4:] for element in df.index.to_list()]
 
 
+def _filter_1hz_at_phase(
+    df: pd.DataFrame, value_cols: list[str], dt_col: str = "date_time"
+) -> pd.DataFrame:
+    """每秒保留一个数据点：优先整秒相位，无数据则取其它有数据的相位。
+
+    探测数据实际落点相位：若整秒(.000)行存在有效数据则用整秒；
+    否则统计各子秒相位上存在有效数据的行数，选最多（并列取最小）的相位；
+    最后只保留该相位行，即每秒一点。
+    有效数据定义：value_cols 中至少一列非 nan（0 也算有效）。
+    若 dt 列整体不含 "."（整秒/1Hz 时间），每秒本就 1 点，直接返回整个 df。
+    """
+    dt = df[dt_col].astype(str)
+    # 时间串中没有任何 "."（整秒/1Hz 时间，形如 "2024-01-01 00:00:00"）时，
+    # 每秒本来就只有一个数据点，无需按相位筛选，整体保留；此分支同时也避免
+    # split 结果整体缺失使后续 .str[:3] 抛出 AttributeError。
+    if not dt.str.contains(".", regex=False).any():
+        return df.copy()
+    ms = dt.str.split(".", n=1).str[1].str[:3]
+    valid_dt = dt.notna() & ms.notna() & (ms.str.len() == 3)
+    if not valid_dt.any():
+        return df.iloc[0:0]
+
+    has_data = df[value_cols].notna().any(axis=1) & valid_dt
+
+    # 优先整秒相位
+    if (ms.eq("000") & has_data).any():
+        phase = "000"
+    else:
+        counts = ms[has_data].value_counts()
+        if counts.empty:
+            return df.iloc[0:0]
+        max_count = counts.iloc[0]
+        candidates = counts[counts == max_count].index.tolist()
+        phase = min(candidates)
+
+    return df.loc[valid_dt & ms.eq(phase)]
+
+
 def _copy_template_sheet(template_ws, target_wb, title: str):
     """Add a worksheet that retains the static report template's layout."""
     target_ws = target_wb.create_sheet(title=title)
@@ -1083,10 +1121,9 @@ class Report:
                 ]
 
                 df_svs_used = df[[f"{_sys}_used" for _sys in sys_list] + ["date_time"]]
-                svs_used_str = df_svs_used["date_time"].str
-                df_svs_used = df_svs_used[
-                    svs_used_str.endswith(".00") | svs_used_str.endswith(".000")
-                ].fillna(DEFAULT_NULL_VALUE)
+                df_svs_used = _filter_1hz_at_phase(
+                    df_svs_used, value_cols=[f"{_sys}_used" for _sys in sys_list]
+                ).fillna(DEFAULT_NULL_VALUE)
                 svs_used_dict[file] = [
                     _format_index(df_svs_used),
                     {
@@ -1097,10 +1134,7 @@ class Report:
 
                 df.loc[df["label"] == 0, ["pdop", "hdop", "vdop"]] = np.nan
                 df_dop = df[["pdop", "hdop", "vdop", "date_time"]]
-                df_dop_index_str = df_dop["date_time"].str
-                df_dop = df_dop[
-                    df_dop_index_str.endswith(".00") | df_dop_index_str.endswith(".000")
-                ]
+                df_dop = _filter_1hz_at_phase(df_dop, value_cols=["pdop", "hdop", "vdop"])
 
                 dop_dict[file] = [
                     _format_index(df_dop),
@@ -1112,10 +1146,7 @@ class Report:
                 ]
 
                 if df_snr is not None:
-                    df_index_str = df_snr["date_time"].str
-                    df_snr = df_snr[
-                        df_index_str.endswith(".00") | df_index_str.endswith(".000")
-                    ]
+                    df_snr = _filter_1hz_at_phase(df_snr, value_cols=filter_list)
                     df_snr.fillna(np.nan, inplace=True)
                     axis = _format_index(df_snr)
 
@@ -1340,11 +1371,9 @@ class Report:
                         },
                     ]
                     df_gps_l1 = df[["gps_l1", "distance", "hgt_delta", "date_time"]]
-                    df_gps_index_str = df_gps_l1["date_time"].str
-                    df_gps_l1 = df_gps_l1[
-                        df_gps_index_str.endswith(".00")
-                        | df_gps_index_str.endswith(".000")
-                    ]
+                    df_gps_l1 = _filter_1hz_at_phase(
+                        df_gps_l1, value_cols=["gps_l1", "distance", "hgt_delta"]
+                    )
                     gps_l1_h[file] = [
                         _format_index(df_gps_l1),
                         {
