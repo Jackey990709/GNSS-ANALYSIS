@@ -14,6 +14,16 @@ sys_symbol_dict = {
     "$GLGSV": "R",
 }
 
+default_sys_id_map = {
+    "$GPGSV": "l1",
+    "$GBGSV": "b1i",
+    "$BDGSV": "b1i",
+    "$GLGSV": "g1",
+    "$GAGSV": "e1",
+    "$GQGSV": "q1",
+    "$GIGSV": "i5",
+}
+
 
 MAX_CN0_VALUE = 60
 
@@ -38,7 +48,7 @@ class GSVParser(NMEAParser):
             signal_id, gsv_data = line_split[-2], line_split[4:-2]
         else:  # NMEA4.0
             gsv_data = line_split[4:-1]
-            signal_id = "6" if line_split == "$GAGSV" else "1"
+            signal_id = "0"
 
         length = len(gsv_data)
         if length % 4 != 0 or length < 4 or length > 16:
@@ -49,7 +59,11 @@ class GSVParser(NMEAParser):
             freq_label = sat_sys[line_split[0]][signal_id]
         except KeyError:
             if signal_id == "0":
-                freq_label = "L1"
+                freq_label = (
+                    default_sys_id_map[line_split[0]]
+                    if line_split[0] in default_sys_id_map
+                    else ""
+                )
             else:
                 logger.debug(f"sys label not in the memory: {self.line.strip()}")
                 return "", "", []
